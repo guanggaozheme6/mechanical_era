@@ -16,25 +16,31 @@ add_executable(${PROJECT_NAME})
 add_subdirectory(cmake/stm32cubemx)
 target_sources(${PROJECT_NAME} PRIVATE
     # Task 层：业务编排 / 控制循环 / 模式状态机
-    src/task/main.cpp
-    src/task/mode_control.cpp
-    src/task/diagnostics.cpp
+    Task/src/main.cpp
+    Task/src/mode_control.cpp
+    Task/src/diagnostics.cpp
     # Device 层：协议解析 / 设备状态机 / 闭环接口
-    src/device/ps2_protocol.cpp
-    src/device/drive_control.cpp
-    src/device/arm_control.cpp
-    src/device/motor.cpp
-    src/device/arm_joint.cpp
-    src/device/arm_pose.cpp
+    Device/src/ps2_protocol.cpp
+    Device/src/drive_control.cpp
+    Device/src/arm_control.cpp
+    Device/src/motor.cpp
+    Device/src/arm_joint.cpp
+    Device/src/arm_pose.cpp
     # Algorithm 层：纯计算（IK/FK、PID）
-    src/algorithm/arm_kinematics.cpp
-    src/algorithm/pid.cpp
+    Algorithm/src/arm_kinematics.cpp
+    Algorithm/src/pid.cpp
     # Driver 层：寄存器 / PWM / SPI 时序
-    src/driver/ps2.cpp
-    src/driver/outputs.cpp
-    src/driver/encoder.cpp
+    Driver/src/ps2.cpp
+    Driver/src/outputs.cpp
+    Driver/src/encoder.cpp
 )
-target_include_directories(${PROJECT_NAME} PRIVATE inc)
+target_include_directories(${PROJECT_NAME} PRIVATE
+    Include
+    Task/inc
+    Device/inc
+    Algorithm/inc
+    Driver/inc
+)
 target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Werror>)
 # 某些工具链错误地将 ob 加入 C 隐式链接库。
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
