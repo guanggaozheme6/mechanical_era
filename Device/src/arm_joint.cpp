@@ -1,10 +1,35 @@
+/**
+ ******************************************************************************
+ * @file           : arm_joint.cpp
+ * @brief          : 关节行程状态机实现（Device 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "arm_joint.hpp"
 
 #include <cmath>
 
 namespace arm_joint {
+
+/* Private functions ---------------------------------------------------------*/
 namespace {
 
+/**
+ * @brief 按限位钳位，非法值回退
+ * @details 非法目标回退到上一个合法 target，而不是 current —— 回到 current 会让
+ *          "目标突然缩回原位"，回到旧 target 才是"忽略这次输入"。
+ * @param joint 关节
+ * @param percent 待钳位的目标
+ * @param fallback 非法时使用的值
+ * @return 钳位后的目标
+ */
 float clamp_to_limits(const Joint &joint, float percent, float fallback) {
     if (!std::isfinite(percent)) {
         return fallback; // 非法目标一律丢弃，回退到上一个合法值
@@ -19,6 +44,8 @@ float clamp_to_limits(const Joint &joint, float percent, float fallback) {
 }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void configure(Joint &joint, Limits limits, float percent) {
     joint.limits = limits;

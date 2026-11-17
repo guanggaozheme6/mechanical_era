@@ -1,12 +1,27 @@
+/**
+ ******************************************************************************
+ * @file           : motor.cpp
+ * @brief          : 四路电机速度闭环实现（Device 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "motor.hpp"
 #include "encoder.hpp"
 #include "pid.hpp"
 #include "main.h"
 
+/* Private typedef -----------------------------------------------------------*/
 namespace {
 
-constexpr uint32_t kUpdateMs = 10;
-constexpr uint32_t kEncoderStallMs = 300;
+constexpr uint32_t kUpdateMs = 10;        // 闭环周期
+constexpr uint32_t kEncoderStallMs = 300; // 无计数多久判堵转
 // 100% 目标速度对应每个 10 ms 控制周期的编码器计数。实车可在此处统一调速。
 constexpr float kTicksAtFullSpeed = 20.0F;
 
@@ -16,10 +31,13 @@ constexpr float kIntegralGain = 8.0F;
 constexpr float kIntegralLimit = 12.5F;
 constexpr float kOutputMaxPercent = 100.0F;
 
+/**
+ * @brief 单路电机的闭环状态
+ */
 struct Motor {
-    Pid pid;
-    uint32_t last_motion_ms = 0;
-    int previous_target = 0;
+    Pid pid;                  // Algorithm 层的纯 PID
+    uint32_t last_motion_ms = 0; // 最近一次编码器有变化的时刻（堵转判定）
+    int previous_target = 0;     // 上一拍目标（起步/换向时清积分）
     int target = 0;
     int encoder_ticks = 0;
     bool stalled = false;
@@ -29,8 +47,22 @@ struct Motor {
 Motor g_motor[4];
 uint32_t g_last_update_ms = 0;
 
+/**
+ * @brief 取绝对值
+ * @param value 输入
+ * @return |value|
+ */
 int magnitude(int value) { return value < 0 ? -value : value; }
 
+/**
+ * @brief 推进单路电机一个控制周期
+ * @details 停车 → 清积分；起步/换向 → 重新计堵转与积分；堵转 → 输出 0 并置标志；
+ *          正常 → PID 推一拍并按目标符号输出。
+ * @param index 电机序号 0..3
+ * @param target 目标占空比（-100..100）
+ * @param now_ms 当前毫秒时基
+ * @return 该路实际输出占空比（-100..100）
+ */
 int update_one(unsigned index, int target, uint32_t now_ms) {
     Motor &motor = g_motor[index];
     const int ticks = magnitude(encoder::delta_ticks(index));
@@ -71,6 +103,8 @@ int update_one(unsigned index, int target, uint32_t now_ms) {
 }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void motor_init() {
     encoder::init();

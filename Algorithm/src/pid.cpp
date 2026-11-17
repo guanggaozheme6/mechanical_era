@@ -1,12 +1,36 @@
+/**
+ ******************************************************************************
+ * @file           : pid.cpp
+ * @brief          : 纯 PID 控制器实现（Algorithm 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "pid.hpp"
 
+/* Private functions ---------------------------------------------------------*/
 namespace {
 
+/**
+ * @brief 标量限幅
+ * @param value 输入值
+ * @param lower 下限
+ * @param upper 上限
+ * @return 限幅后的值
+ */
 float clamp(float value, float lower, float upper) {
     return value < lower ? lower : (value > upper ? upper : value);
 }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void pid_configure(Pid &pid, float kp, float ki, float integral_limit, float output_min,
                    float output_max) {

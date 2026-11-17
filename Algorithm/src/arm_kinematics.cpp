@@ -1,17 +1,47 @@
+/**
+ ******************************************************************************
+ * @file           : arm_kinematics.cpp
+ * @brief          : 平面 2R 逆解/正解与角度换算实现（Algorithm 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "arm_kinematics.hpp"
 
 #include <cmath>
 
 namespace arm_kinematics {
+
+/* Private functions ---------------------------------------------------------*/
 namespace {
 
+/**
+ * @brief 标量限幅
+ * @param value 输入值
+ * @param lower 下限
+ * @param upper 上限
+ * @return 限幅后的值
+ */
 float clampf(float value, float lower, float upper) {
     return value < lower ? lower : (value > upper ? upper : value);
 }
 
+/**
+ * @brief 是否有限值
+ * @param value 输入
+ * @return true 表示既非 NaN 也非 Inf
+ */
 bool finite(float value) { return std::isfinite(value); }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 float clamp_percent(float percent) { return clampf(percent, -100.0F, 100.0F); }
 

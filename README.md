@@ -53,6 +53,9 @@ cmake --build --preset Release
 - 配置集中在 `car_config` / `arm_config` 命名空间；文件内部细节使用匿名命名空间。无需为每个模块再包一层通用 `Command` / `from_ps2`。
 - 使用普通结构体和函数，无动态分配、继承层次或通用硬件抽象框架。
 - 纯计算与 HAL 操作分开，`.hpp` 声明接口，`.cpp` 实现行为。`Include/app.h` 是供生成的 C 入口调用的薄桥接声明。
+- 注释统一用 doxygen 模板：文件头 80 列 banner + `@file` / `@brief`；
+  类型和函数用 `@brief` / `@details` / `@note` / `@param` / `@return`，VSCode 悬停即可读；
+  单行字段说明仍写行尾 `//`。格式见任一 `Driver/inc/*.hpp`。
 - 使用 `.clang-format` 统一自编代码格式；不要批量格式化 `Core/` 和 `Drivers/` 的生成代码。
 - 生成文件中的手工入口保留在 `USER CODE` 区域。重新生成 CubeMX 后检查片选初值，并重新编译固件。
 - `build/` 是可重新生成的本机输出，不纳入版本控制。

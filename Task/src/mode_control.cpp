@@ -1,7 +1,22 @@
+/**
+ ******************************************************************************
+ * @file           : mode_control.cpp
+ * @brief          : 模式状态机、按键边沿与预设分发实现（Task 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "mode_control.hpp"
 #include "arm_pose.hpp"
 #include "car_config.hpp"
 
+/* Private constants ---------------------------------------------------------*/
 namespace {
 
 OperationMode g_mode = OperationMode::Drive;
@@ -16,15 +31,12 @@ bool g_combo_arming = false;
 bool g_combo_fired = false;
 uint32_t g_combo_since_ms = 0;
 
-bool pressed(const Ps2Frame &frame, Ps2Button button) { return ps2_pressed(frame, button); }
+/* Private types -------------------------------------------------------------*/
 
-bool edge(const Ps2Frame &frame, Ps2Button button) {
-    const auto bit = 1U << static_cast<unsigned>(button);
-    return ps2_pressed(frame, button) && (g_prev_buttons & bit) == 0U;
-}
-
-// 预设绑定表：pose 字段就是 arm_config::Pose 的索引（0..7）。
-// 表驱动，加第 9 条只加一行，不在 mode_control 里写分支。
+/**
+ * @brief 一条预设绑定
+ * @note pose 就是 arm_config::Pose 的索引（0..7），表驱动，加第 9 条只加一行。
+ */
 struct PresetBind {
     Ps2Button button;
     unsigned pose;
@@ -44,7 +56,35 @@ constexpr PresetBind kPresetBinds[] = {
 constexpr unsigned kPresetCount = sizeof(kPresetBinds) / sizeof(kPresetBinds[0]);
 static_assert(kPresetCount == 8U, "预设绑定表与 8 个按键不一致");
 
-// 急停：L3+R3 同按 >= kEstopHoldMs 才翻转 latch；触发后必须先都松开才能再触发。
+/* Private functions ---------------------------------------------------------*/
+
+/**
+ * @brief 查询按键是否按下
+ * @param frame 手柄帧
+ * @param button 按键
+ * @return true 表示按下
+ */
+bool pressed(const Ps2Frame &frame, Ps2Button button) { return ps2_pressed(frame, button); }
+
+/**
+ * @brief 上升沿检测（对上一帧按键位图）
+ * @details PS2 20 ms 才刷新一次，直接读电平会让"按住 1 秒"触发几十次。
+ * @param frame 手柄帧
+ * @param button 按键
+ * @return true 表示本帧刚按下
+ */
+bool edge(const Ps2Frame &frame, Ps2Button button) {
+    const auto bit = 1U << static_cast<unsigned>(button);
+    return ps2_pressed(frame, button) && (g_prev_buttons & bit) == 0U;
+}
+
+/**
+ * @brief 急停组合 L3+R3
+ * @details 同按 >= kEstopHoldMs 才翻转 latch；触发后必须先都松开才能再触发。
+ *          200 ms 而不是瞬时，是因为 PS2 20 ms 一帧、两键很少落在同一帧。
+ * @param frame 手柄帧
+ * @param now_ms 当前毫秒时基
+ */
 void update_estop_combo(const Ps2Frame &frame, uint32_t now_ms) {
     const bool both = pressed(frame, Ps2Button::L3) && pressed(frame, Ps2Button::R3);
     if (!both) {
@@ -66,9 +106,12 @@ void update_estop_combo(const Ps2Frame &frame, uint32_t now_ms) {
     }
 }
 
-// 机械臂模式：只把按键换成「意图」（速度 / 预设索引），
-// 平方律、限位、积分全在 arm_pose 里，这里不认识任何速度常数。
-// R3 单按没有分支：它只是 L3+R3 急停组合的另一半（Q-1 定案）。
+/**
+ * @brief 机械臂模式的按键与摇杆处理
+ * @details 只把按键换成"意图"（速度 / 预设索引），平方律、限位、积分全在 arm_pose 里，
+ *          这里不认识任何速度常数。R3 单按没有分支：它只是 L3+R3 急停组合的另一半。
+ * @param frame 手柄帧
+ */
 void update_arm_mode(const Ps2Frame &frame) {
     // 预设 > 摇杆：命中预设的那一帧丢弃摇杆速度。arm_pose_request 内部也会清，
     // 这里显式清一次是为了让同一帧的两条入口语义一致（不回弹）。
@@ -120,6 +163,8 @@ void update_arm_mode(const Ps2Frame &frame) {
 }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void mode_control_init(uint32_t now_ms) {
     g_mode = OperationMode::Drive;

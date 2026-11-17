@@ -1,18 +1,40 @@
+/**
+ ******************************************************************************
+ * @file           : ps2.cpp
+ * @brief          : PS2 接收器 SPI 通信实现（Driver 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "ps2.hpp"
 #include <algorithm>
 
+/* Exported variables --------------------------------------------------------*/
+
 Ps2Diagnostics ps2_debug;
 
+/* Private constants ---------------------------------------------------------*/
 namespace {
-constexpr uint32_t kPollMs = 20;
-constexpr uint32_t kConfigMs = 1000;
-constexpr uint32_t kTimeoutMs = 100;
+constexpr uint32_t kPollMs = 20;    // 轮询周期
+constexpr uint32_t kConfigMs = 1000; // 重协商间隔
+constexpr uint32_t kTimeoutMs = 100; // 有效帧超时 → 断线
 SPI_HandleTypeDef *receiver_spi = nullptr;
 Ps2Frame latest_frame;
 uint32_t last_poll = 0;
 uint32_t last_config = 0;
 uint32_t last_valid_ms = 0;
 
+/**
+ * @brief 忙等微秒延时
+ * @details 用 DWT 周期计数器实现；只在 SPI 帧内用（字节间隙 20 us）。
+ * @param us 延时时长（微秒）
+ */
 void delay_us(uint32_t us) {
     const uint32_t start = DWT->CYCCNT;
     const uint32_t cycles = (SystemCoreClock / 1000000U) * us;
@@ -20,7 +42,16 @@ void delay_us(uint32_t us) {
     }
 }
 
-// 整帧保持 ATT 为低；字节间隔为未接线的 ACK 留出应答时间。
+/**
+ * @brief 一整帧的双向移位交换
+ * @details 整帧保持 ATT 为低；字节间隔为未接线的 ACK 留出应答时间。逐字节调用
+ *          HAL_SPI_TransmitReceive（不要一口气传 9 字节，帧内没有 ACK 空档）。
+ * @param tx 发送缓冲
+ * @param rx 接收缓冲（输出）
+ * @param length 入：请求长度；出：实际收到的长度
+ * @param polling true = 轮询帧（收到第 2 字节后按模式字动态决定长度）
+ * @return HAL 状态；非 OK 时已经累加 spi_errors
+ */
 HAL_StatusTypeDef exchange(const uint8_t *tx, uint8_t (&rx)[24], std::size_t &length,
                            bool polling) {
     std::fill_n(rx, sizeof(rx), 0xFF);
@@ -51,6 +82,11 @@ HAL_StatusTypeDef exchange(const uint8_t *tx, uint8_t (&rx)[24], std::size_t &le
     return status;
 }
 
+/**
+ * @brief 把手柄切到模拟模式（红灯）
+ * @details 三条命令：进配置、设定模拟+震动、退出配置。手柄中途休眠/换电池会退回
+ *          数字模式，所以这里由 ps2_update 周期重试自愈。
+ */
 void configure_analog() {
     constexpr uint8_t commands[3][9] = {{0x01, 0x43, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00},
                                         {0x01, 0x44, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0x00},
@@ -66,7 +102,9 @@ void configure_analog() {
         }
     }
 }
-}
+} // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void ps2_init(SPI_HandleTypeDef &spi) {
     receiver_spi = &spi;

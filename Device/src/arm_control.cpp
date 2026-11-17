@@ -1,5 +1,21 @@
+/**
+ ******************************************************************************
+ * @file           : arm_control.cpp
+ * @brief          : 机械臂摇杆换算实现（Device 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "arm_control.hpp"
 #include "car_config.hpp"
+
+/* Exported functions --------------------------------------------------------*/
 
 int arm_axis_percent(uint8_t axis, bool invert) {
     const int delta = static_cast<int>(axis) - 128;

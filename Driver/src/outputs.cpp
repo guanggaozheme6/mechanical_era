@@ -1,3 +1,17 @@
+/**
+ ******************************************************************************
+ * @file           : outputs.cpp
+ * @brief          : 电机/舵机硬件输出实现（Driver 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "outputs.hpp"
 #include "main.h"
 #include "motor.hpp"
@@ -6,7 +20,11 @@
 extern "C" TIM_HandleTypeDef htim1;
 extern "C" TIM_HandleTypeDef htim8;
 
+/* Private typedef -----------------------------------------------------------*/
 namespace {
+/**
+ * @brief 一路电机的引脚与定时器通道
+ */
 struct Motor {
     GPIO_TypeDef *a_port;
     uint16_t a_pin;
@@ -15,6 +33,7 @@ struct Motor {
     uint32_t channel;
 };
 
+/* Private variables ---------------------------------------------------------*/
 const Motor kMotors[] = {
     {motor1_A_GPIO_Port, motor1_A_Pin, motor1_B_GPIO_Port, motor1_B_Pin, TIM_CHANNEL_1},
     {motor2_A_GPIO_Port, motor2_A_Pin, motor2_B_GPIO_Port, motor2_B_Pin, TIM_CHANNEL_2},
@@ -23,8 +42,10 @@ const Motor kMotors[] = {
 
 constexpr uint32_t servo_channels[] = {TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4};
 
-int previous_motor_duty[4] = {};
-}
+int previous_motor_duty[4] = {}; // 上一帧占空比，用于换向检测
+} // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void apply_servos(ArmCommand command) {
     // TIM8 每 1 微秒计数一次（72 MHz / 72），因此比较值就是脉宽的微秒数。
@@ -47,6 +68,7 @@ void apply_motors(DriveCommand command) {
         reversing |= requested[i] * previous_motor_duty[i] < 0;
     }
     if (reversing) {
+        // 换向必须先把 H 桥全关 2 ms，否则反电动势会灌进驱动。
         for (const Motor &motor : kMotors) {
             __HAL_TIM_SET_COMPARE(&htim1, motor.channel, 0);
             HAL_GPIO_WritePin(motor.a_port, motor.a_pin, GPIO_PIN_RESET);

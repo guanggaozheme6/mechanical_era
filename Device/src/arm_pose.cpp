@@ -1,3 +1,17 @@
+/**
+ ******************************************************************************
+ * @file           : arm_pose.cpp
+ * @brief          : 机械臂编排层实现：预设/笛卡尔入口 → 解算 → 关节层（Device 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "arm_pose.hpp"
 #include "arm_config.hpp"
 #include "arm_joint.hpp"
@@ -5,16 +19,16 @@
 
 #include <cmath>
 
-// ============================================================================
-//  标定期编译开关（甲方要求：删掉所有单关节手动入口之后，结构限位只能这样量）
-// ----------------------------------------------------------------------------
-//  定义 ARM_BRINGUP 后：
-//    * 上电直接把 kBringupPercent 四路值当目标，绕过 IK / 工作区 / 角度限位；
-//    * 串口仍然打 S1..S4 与反馈，用它记录"顶到结构那一刻"的读数；
-//    * 不接任何手柄键 —— 只能改常量、重烧、上电，标完把宏关掉再烧一版。
-//  打开方式：CMakeLists.txt 的 target_compile_options 里加 -DARM_BRINGUP，
-//  或临时在 arm_config.hpp 顶部 #define。正常固件绝不定义它。
-// ============================================================================
+/* Private macro -------------------------------------------------------------*/
+
+/**
+ * @brief 标定期编译开关
+ * @details 定义 ARM_BRINGUP 后：上电直接把 kBringupPercent 四路值当目标，绕过 IK /
+ *          工作区 / 角度限位；串口仍然打 S1..S4 与反馈，用它记录"顶到结构那一刻"
+ *          的读数；不接任何手柄键 —— 只能改常量、重烧、上电，标完把宏关掉再烧一版。
+ * @note 打开方式：CMakeLists.txt 的 target_compile_options 里加 -DARM_BRINGUP，
+ *       或临时在 include 处 #define。正常固件绝不定义它。
+ */
 #if defined(ARM_BRINGUP)
 constexpr bool kBringup = true;
 #else
@@ -30,16 +44,28 @@ using arm_config::kPoses;
 using arm_config::kServoCount;
 using arm_config::kWorkspace;
 
+/* Private constants ---------------------------------------------------------*/
+
+/** @brief 上电时四路的目标行程（中位） */
 constexpr float kZeroPercent[kServoCount] = {0.0F, 0.0F, 0.0F, 0.0F};
 
-// 标定期初值（行程百分比，-100..100）。只有 ARM_BRINGUP 打开时才生效。
-// 改一个数 → 重烧 → 看串口：这是删掉关节 jog 之后唯一的单路手动手段。
+/**
+ * @brief 标定期初值（行程百分比，-100..100）
+ * @note 只有 ARM_BRINGUP 打开时才生效。改一个数 → 重烧 → 看串口：这是删掉关节 jog
+ *       之后唯一的单路手动手段。
+ */
 constexpr int kBringupPercent[kServoCount] = {0, 0, 0, 0};
 
-// 标定版必须放开到 ±100 全行程。用 kJointLimits 的话，"用限位去测限位"的循环
-// 还在，只不过程序从 solve_xy 换成了 bank_configure —— 量不出真实边界。
+/**
+ * @brief 标定版用的全行程限位
+ * @details 必须放开到 ±100。用 kJointLimits 的话，"用限位去测限位"的循环还在，
+ *          只不过程序从 solve_xy 换成了 bank_configure —— 量不出真实边界。
+ * @warning 标定版没有任何软件限位，必须人工盯住，听到堵转立刻拔电。
+ */
 constexpr arm_joint::Limits kBringupLimits[kServoCount] = {
     {-100.0F, 100.0F}, {-100.0F, 100.0F}, {-100.0F, 100.0F}, {-100.0F, 100.0F}};
+
+/* Private variables ---------------------------------------------------------*/
 
 arm_joint::Bank g_bank;
 float g_cart_vx = 0.0F; // 一次性，update 后清零（与 jog 同语义）
@@ -48,15 +74,38 @@ uint32_t g_last_ms = 0U;
 ArmFeedback g_fb;
 unsigned g_bad_pose_mask = 0U;
 
+/* Private functions ---------------------------------------------------------*/
+
+/**
+ * @brief 是否有限值
+ * @param value 输入
+ * @return true 表示既非 NaN 也非 Inf
+ */
 bool finite(float value) { return std::isfinite(value); }
 
+/**
+ * @brief 标量限幅
+ * @param value 输入值
+ * @param lower 下限
+ * @param upper 上限
+ * @return 限幅后的值
+ */
 float clampf(float value, float lower, float upper) {
     return value < lower ? lower : (value > upper ? upper : value);
 }
 
-// 水平位下垂预补偿：线性按"前伸距离"缩放。默认系数 0 = 完全关闭。
+/**
+ * @brief 水平位下垂预补偿
+ * @details 线性按"前伸距离"缩放，默认系数 0 = 完全关闭。
+ * @param x_mm 前伸距离（mm）
+ * @return 需要额外抬高的量（mm）
+ */
 float sag_compensation(float x_mm) { return kMotion.sag_mm_per_100mm * x_mm / 100.0F; }
 
+/**
+ * @brief 用当前关节值刷新反馈快照
+ * @details FK 回算末端 + 两路连杆角；没有编码器时这是"命令值"，不是实测角。
+ */
 void refresh_feedback() {
     const float s1 = g_bank.channel[arm_config::kShoulderServo].current;
     const float s2 = g_bank.channel[arm_config::kElbowServo].current;
@@ -67,8 +116,16 @@ void refresh_feedback() {
     g_fb.bad_poses = g_bad_pose_mask;
 }
 
-// 两级钳位 + IK + 写入关节层。返回 false 表示没下发（原因已在 g_fb 里）。
-// 钳位顺序不能反：先矩形（穿肩轴 / 力矩 / 折叠死区），再圆环（够不着）。
+/**
+ * @brief 两级钳位 + IK + 写入关节层
+ * @details 钳位顺序不能反：先矩形（穿肩轴 / 力矩 / 折叠死区），再圆环（够不着）。
+ *          命中任一级钳位就不改目标：边界点往往贴着奇异区，照着走会抖。
+ * @param x_mm 请求 x（mm）
+ * @param y_mm 请求 y（mm）
+ * @param applied_x 输出：实际用于解算的 x（钳位后、含下垂补偿）
+ * @param applied_y 输出：实际用于解算的 y
+ * @return true 表示已下发；false 表示被钳位或超限（原因已在 g_fb 里）
+ */
 bool apply_xy(float x_mm, float y_mm, float &applied_x, float &applied_y) {
     if (!finite(x_mm) || !finite(y_mm)) {
         g_fb.at_wall = true;
@@ -111,7 +168,11 @@ bool apply_xy(float x_mm, float y_mm, float &applied_x, float &applied_y) {
     return true;
 }
 
-// 闭环于"当前实际末端"的积分：每帧只走一个步长，不累积虚假距离。
+/**
+ * @brief 闭环于"当前实际末端"的积分
+ * @details 每帧只走一个步长，不累积虚假距离：松手不追尾、到边界不蠕动、扳回立即恢复。
+ * @param dt_s 本帧时长（秒）
+ */
 void cartesian_step(float dt_s) {
     const float s1 = g_bank.channel[arm_config::kShoulderServo].current;
     const float s2 = g_bank.channel[arm_config::kElbowServo].current;
@@ -126,6 +187,10 @@ void cartesian_step(float dt_s) {
     g_fb.target_y_mm = applied_y;
 }
 
+/**
+ * @brief 打包本帧的四路指令
+ * @return ArmCommand（四舍五入后的整数行程百分比）
+ */
 ArmCommand make_command() {
     ArmCommand command;
     arm_joint::bank_output(g_bank, command.servo);
@@ -133,6 +198,8 @@ ArmCommand make_command() {
 }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void arm_pose_init(uint32_t now_ms) {
     g_cart_vx = 0.0F;

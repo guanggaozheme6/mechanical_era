@@ -1,9 +1,27 @@
+/**
+ ******************************************************************************
+ * @file           : diagnostics.cpp
+ * @brief          : 串口状态上报实现（Task 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "diagnostics.hpp"
 #include "motor.hpp"
 #include "ps2.hpp"
 #include <cstdio>
 
+/* Private constants ---------------------------------------------------------*/
+
 extern "C" UART_HandleTypeDef huart3;
+
+/* Exported functions --------------------------------------------------------*/
 
 void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_stop,
                    bool key_pressed, bool arm_mode) {

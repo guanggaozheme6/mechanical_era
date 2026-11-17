@@ -1,11 +1,35 @@
+/**
+ ******************************************************************************
+ * @file           : main.cpp
+ * @brief          : 主循环：板载急停、输入采集、指令计算、输出与定时上报（Task 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "app.h"
 #include "diagnostics.hpp"
 #include "mode_control.hpp"
 #include "outputs.hpp"
 #include "ps2.hpp"
 
+/* Private constants ---------------------------------------------------------*/
+
 extern "C" SPI_HandleTypeDef hspi2;
 
+/* Exported functions --------------------------------------------------------*/
+
+/**
+ * @brief 应用主任务（由 Core/Src/main.c 调用，永不返回）
+ * @details 1 ms 一轮：板载 Key 去抖 → 读手柄 → 模式分发 → 写电机/舵机 → 500 ms 上报。
+ * @note 板载 Key 是硬件层面的第二道急停：手柄断线时 mode_control 也会自行停止，
+ *       这条不依赖无线链路。
+ */
 extern "C" void main_task() {
     init_outputs();
     ps2_init(hspi2);

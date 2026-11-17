@@ -1,12 +1,33 @@
+/**
+ ******************************************************************************
+ * @file           : encoder.cpp
+ * @brief          : 四路 AB 相编码器驱动实现（Driver 层）
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 GMaster
+ * All rights reserved.
+ *
+ ******************************************************************************
+ */
+
+/* Includes ------------------------------------------------------------------*/
 #include "encoder.hpp"
 #include "main.h"
 
 namespace encoder {
+
+/* Private variables ---------------------------------------------------------*/
 namespace {
 
-TIM_HandleTypeDef g_timer[kCount];
-uint16_t g_previous[kCount];
+TIM_HandleTypeDef g_timer[kCount]; // 四路编码器的定时器句柄
+uint16_t g_previous[kCount];       // 上一次读到的计数（算增量用）
 
+/**
+ * @brief 配置四路编码器引脚与复用
+ * @details PA15/PB3 原本是 JTAG 引脚；关闭 JTAG，保留 SWD 下载与调试。
+ *          TIM2 需要部分重映射才能落到 PA15/PB3。
+ */
 void configure_pins() {
     __HAL_RCC_AFIO_CLK_ENABLE();
     __HAL_RCC_TIM2_CLK_ENABLE();
@@ -35,6 +56,11 @@ void configure_pins() {
     HAL_GPIO_Init(GPIOB, &pins); // M4: TIM4_CH1/CH2
 }
 
+/**
+ * @brief 按 AB 相正交编码器模式初始化一路定时器
+ * @param timer 定时器句柄（输出）
+ * @param instance 定时器实例（TIM2/3/4/5）
+ */
 void configure_timer(TIM_HandleTypeDef &timer, TIM_TypeDef *instance) {
     timer.Instance = instance;
     timer.Init.Prescaler = 0;
@@ -61,6 +87,8 @@ void configure_timer(TIM_HandleTypeDef &timer, TIM_TypeDef *instance) {
 }
 
 } // namespace
+
+/* Exported functions --------------------------------------------------------*/
 
 void init() {
     configure_pins();
