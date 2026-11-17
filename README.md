@@ -6,11 +6,15 @@ STM32F103 麦克纳姆轮小车与四路舵机控制。控制代码使用 C++14�
 
 1. `src/main.cpp`：主循环，按键去抖与急停，采集输入、计算指令、执行输出、定时报告。
 2. `src/ps2.cpp`：单个 PS2 接收器的 SPI 通信、模拟模式配置、轮询及超时；`ps2_protocol.cpp` 负责唯一一份报文解码。
-3. `src/drive_control.cpp` / `src/arm_control.cpp`：将 `Ps2Frame` 转成电机/舵机百分比，不依赖 HAL。
-4. `src/outputs.cpp`：方向脚、PWM、换向等待与舵机脉宽；`diagnostics.cpp`：串口状态和 M4 硬件诊断。
-5. `inc/car_config.hpp`：轮位、极性、麦轮布局、速度和死区配置。
+3. `src/mode_control.cpp`：手柄操作逻辑，两个模式入口、按键边沿位图、`L3+R3` 急停组合、预设绑定表。
+4. `src/arm_pose.cpp`：机械臂编排层，预设/笛卡尔入口 → 解算 → 关节层，以及反馈聚合。
+5. `src/arm_kinematics.cpp`（平面 2R 逆解/正解）与 `src/arm_joint.cpp`（四路行程状态机）：纯计算，不碰 HAL，可在 PC 上单测。
+6. `src/drive_control.cpp`：底盘麦轮混合与按键平移/自转；`src/arm_control.cpp`：摇杆换算与死区；`src/outputs.cpp`：方向脚、PWM、换向等待与舵机脉宽。
+7. `src/diagnostics.cpp`：串口状态、机械臂解算反馈和 M4 硬件诊断。
+8. 参数：`inc/car_config.hpp`（轮位、极性、麦轮布局、摇杆死区、自转占空比）与 `inc/arm_config.hpp`（几何、限位、工作区、速度、8 条预设的唯一真值）。
 
-数据按 `ps2_update → ps2_read → drive_from_ps2 / arm_from_ps2 → apply_motors / apply_servos` 流动。PS2 报文只解码一次，程序中的按键位统一为 1 表示按下。调试统计不参与控制决策。
+数据按 `ps2_update → ps2_read → mode_control_update → apply_motors / apply_servos` 流动。PS2 报文只解码一次，程序中的按键位统一为 1 表示按下。调试统计不参与控制决策。
+
 
 ## 编译
 
@@ -25,10 +29,12 @@ cmake --build --preset Release
 
 输出为 `build/Debug/mechanical_era.elf` 或 `build/Release/mechanical_era.elf`。
 
+标定结构限位时需要另一份固件：在 `CMakeLists.txt` 的 `target_compile_options` 里临时加 `-DARM_BRINGUP`，标完必须去掉并重烧正常版。
+
 ## 代码约定
 
 - 公共类型用明确名称，如 `Ps2Frame`、`DriveCommand`、`ArmCommand`；函数用 `snake_case`。
-- 配置集中在 `car_config` 命名空间；文件内部细节使用匿名命名空间。无需为每个模块再包一层通用 `Command` / `from_ps2`。
+- 配置集中在 `car_config` / `arm_config` 命名空间；文件内部细节使用匿名命名空间。无需为每个模块再包一层通用 `Command` / `from_ps2`。
 - 使用普通结构体和函数，无动态分配、继承层次或通用硬件抽象框架。
 - 纯计算与 HAL 操作分开，`.hpp` 声明接口，`.cpp` 实现行为。`inc/app.h` 是供生成的 C 入口调用的薄桥接声明。
 - 使用 `.clang-format` 统一自编代码格式；不要批量格式化 `Core/` 和 `Drivers/` 的生成代码。
@@ -39,12 +45,35 @@ cmake --build --preset Release
 
 采用 O 型麦轮布局。M1 左前、M2 右前、M3 右后、M4 左后，M1/M2 反向。轮位和方向在 `inc/car_config.hpp` 中配置。
 
-- 左摇杆控制前后、左右平移；方向键以 80% PWM 覆盖左摇杆输入。
-- L1/R1 控制旋转；按住 L3 时右摇杆也参与底盘旋转。
-- 右摇杆同时控制机械臂；Cross/Circle 控制第三路舵机偏移，松开回中。
-- Cross/SELECT 按住时底盘停车；板上 Key 切换急停。
-- 断线或有效报文超时 100 ms 时电机停止、舵机回中。
-- START 加单个方向键用于电机校准：上/右/下/左对应 M1/M2/M3/M4，R2 反转，输出为 35% 原始通道占空比。
+**模式**：`Start` 进模式一（底盘，上电默认），`Select` 进模式二（机械臂）。两个键都是直接入口、各自幂等，不是 toggle；急停锁定时不响应。
+
+**模式一：底盘**
+
+| 输入 | 行为 |
+| --- | --- |
+| 左摇杆 Y / X | 前进后退 / 左右平移，死区 16，满偏 100% |
+| `L2` / `R2` | 逆时针 / 顺时针原地自转（`kRotateDutyPercent`，默认 80；同按 = 相抵） |
+| 方向键 ↑↓←→ | 平移按钮备份（80%），覆盖左摇杆 |
+| 右摇杆 / `L1` / `R1` / △○╳□ | 无功能（右摇杆整条通道已删） |
+
+**模式二：机械臂精调**
+
+| 输入 | 行为 |
+| --- | --- |
+| 左摇杆 X / Y | 末端笛卡尔速度：X 前伸/回收，Y 抬升/下压；平方律，满杆 50 mm/s，死区 8，松手即停 |
+| `L2` / `R2` | 夹爪 松 / 紧（servo[2]，±200 %/s；正行程 = 张开） |
+| `L1` / `R1` | 腕 roll 逆 / 顺（servo[3]，±150 %/s） |
+| ↑ / ↓ / ← / → | 预设 P0 / P1 / P2 / P3 |
+| △ / ○ / ╳ / □ | 预设 P4 / P5 / P6 / P7 |
+| `R3` 单按 | 无功能（它只是急停组合的另一半） |
+
+扳机是开关量（报文只解按键位，没有压力字节），夹爪和腕只能恒速动，行程靠按住时长。摇杆与扳机**可以同帧并行**：左手摆位的同时右手开合夹爪。
+
+**急停**
+
+- `L3`+`R3` 同按 ≥ 200 ms 锁定急停，再按一次解除；两键必须先都松开才能再次触发。**`╳` 不再是急停**，它现在是预设 P6。
+- 板上 Key 提供同样行为的硬件级第二道保险。
+- 手柄断线或有效报文超时 100 ms 时电机停止，机械臂保持在当前姿态（不回中）。
 
 | PS2 信号 | STM32 引脚 |
 | --- | --- |
@@ -56,4 +85,29 @@ cmake --build --preset Release
 
 SPI2 使用 Mode 3、LSB 优先、256 分频，20 ms 轮询。接收器按模块规格供电，信号电平匹配 3.3 V。
 
-TIM1 输出四路电机 PWM，TIM8 的 PC6～PC9 输出四路舵机 PWM。USART3_TX 使用 PC10，115200、8N1，每 500 ms 输出输入状态、电机指令及 M4 硬件诊断。
+TIM1 输出四路电机 PWM，TIM8 的 PC6～PC9 输出四路舵机 PWM。USART3_TX 使用 PC10，115200、8N1，每 500 ms 输出两行状态：
+
+```
+PS2 online=1 mode=73 op=ARM keys=0000 LX=128 LY=128 M=0,0,0,0 STOP=0 KEY=0 bad=0
+ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=1 lim=0 wall=0 poses=0x00 bu=0
+```
+
+`mode=` 是 PS2 协议模式字（0x41/0x73/0x79），`op=` 才是操作模式。`xy` 是 FK 回算的当前末端，`tgt` 是本帧解算用的目标，`th` 是连杆角，`ok`/`lim`/`wall` 分别是「够不着 / 关节超限 / 工作区钳位」三个独立标志，`poses` 是上电自检失败的预设位掩码（`0x00` = 八条全好），`bu=1` 表示这是 `ARM_BRINGUP` 标定版（正常版恒 0，标完看到 1 就是烧错了）。
+
+## 机械臂标定
+
+**没有单关节 jog 了**：轴 0/1 只能由笛卡尔解算驱动，手动入口只剩夹爪(2) 和腕(3)。所有数值在 `inc/arm_config.hpp`（`kGeom` / `kJointLimits` / `kWorkspace` / `kMotion` / `kPoses`），改完重烧。
+
+顺序不能乱：
+
+1. **量连杆**：卡尺量轴心距 → `kGeom.upper_mm` / `fore_mm`。
+2. **定零点**：`-DARM_BRINGUP` 版把该路设 0，量角器量绝对角 → `zero_deg`。
+3. **定比例**：`ARM_BRINGUP` 推到 +30 / +60，两点量角度差 → `deg_per_percent`（含符号）。
+4. **定限位**：`ARM_BRINGUP` 逐 10% 加，找到顶住的百分比后回退 3，换成角度写进 `range_min_deg` / `range_max_deg`。**只能这样测**：正常版的笛卡尔出口本来就被角度限位钳着，「用限位去测限位」量不出真实边界。
+5. **校验模型**：烧正常版，笛卡尔推到 (150,120)，腕点与目标目测偏差应 < 5 mm；超了先查 `deg_per_percent`，再查下垂（`kMotion.sag_mm_per_100mm`），不要先改连杆长度。
+6. **填预设**：笛卡尔摆到 8 个工位，抄串口 `xy=` 与 `S1..S4` → `kPoses[8]`。
+7. **上电全表校验**：不碰手柄，串口应打 `poses=0x00`。
+
+`ARM_BRINGUP` 版把四路直接设成 `src/arm_pose.cpp` 里的 `kBringupPercent[4]`，跳过 IK、工作区、角度限位，**没有任何软件限位**，必须人工盯住、听到堵转立刻拔电。它不接任何手柄键，标完去掉宏重烧，否则等于把全部限位关掉上赛场。
+
+限位只存角度，百分比由 `percent_of()` 在编译期派生（`inc/arm_config.hpp`），不要再手填一套百分比限位。

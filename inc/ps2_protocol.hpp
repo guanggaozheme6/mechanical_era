@@ -26,8 +26,6 @@ struct Ps2Frame {
     bool connected = false;
     bool analog = false;
     uint16_t buttons = 0; // 1 表示按下；仅在解码入口转换协议的低有效位。
-    uint8_t right_x = 128;
-    uint8_t right_y = 128;
     uint8_t left_x = 128;
     uint8_t left_y = 128;
 };

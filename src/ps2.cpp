@@ -104,8 +104,7 @@ void ps2_update() {
     ps2_debug.mode = frame.connected ? rx[1] : 0;
     if (frame.connected) {
         if (latest_frame.connected &&
-            (frame.buttons != latest_frame.buttons || frame.right_x != latest_frame.right_x ||
-             frame.right_y != latest_frame.right_y || frame.left_x != latest_frame.left_x ||
+            (frame.buttons != latest_frame.buttons || frame.left_x != latest_frame.left_x ||
              frame.left_y != latest_frame.left_y)) {
             ++ps2_debug.input_changes;
         }

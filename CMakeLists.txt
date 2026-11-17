@@ -21,6 +21,10 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/drive_control.cpp
     src/motor_pid.cpp
     src/arm_control.cpp
+    src/arm_kinematics.cpp
+    src/arm_joint.cpp
+    src/arm_pose.cpp
+    src/mode_control.cpp
     src/outputs.cpp
     src/diagnostics.cpp
 )

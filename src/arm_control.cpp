@@ -1,27 +1,19 @@
 #include "arm_control.hpp"
+#include "car_config.hpp"
 
-namespace {
-int axis_percent(uint8_t axis) {
+int arm_axis_percent(uint8_t axis, bool invert) {
     const int delta = static_cast<int>(axis) - 128;
-    return delta < 0 ? delta * 100 / 128 : delta * 100 / 127;
-}
-}
-
-ArmCommand arm_from_ps2(const Ps2Frame &frame) {
-    ArmCommand command;
-    if (!frame.connected) {
-        return command;
+    const int distance = delta < 0 ? -delta : delta;
+    if (distance <= car_config::kArmDeadzone) {
+        // 摇杆中位通常有 ±5..10 的漂移；不去掉会让舵机持续抖动发热。
+        return 0;
     }
-    if (frame.analog) {
-        // 机械臂的两个摇杆轴交换：上下控制第 1 路，左右控制第 4 路。
-        command.servo[0] = axis_percent(frame.right_y);
-        command.servo[3] = axis_percent(frame.right_x);
+    // 负半轴和正半轴的满量程不同（0..127 与 128..255），分别归一化。
+    const int full_scale = delta < 0 ? 128 : 127;
+    const int usable = full_scale - car_config::kArmDeadzone;
+    int scaled = (distance - car_config::kArmDeadzone) * 100 / usable;
+    if (delta < 0) {
+        scaled = -scaled;
     }
-    if (ps2_pressed(frame, Ps2Button::Cross)) {
-        command.servo[2] -= 10;
-    }
-    if (ps2_pressed(frame, Ps2Button::Circle)) {
-        command.servo[2] += 10;
-    }
-    return command;
+    return invert ? -scaled : scaled;
 }

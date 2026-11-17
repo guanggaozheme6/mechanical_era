@@ -56,40 +56,29 @@ DriveCommand mix_drive(int forward, int strafe, int rotation, car_config::Mecanu
 }
 
 DriveCommand drive_from_ps2(const Ps2Frame &frame) {
-    if (!frame.connected || ps2_pressed(frame, Ps2Button::Cross) ||
-        ps2_pressed(frame, Ps2Button::Select)) {
+    // 这里只挡断线：停车判定的唯一真值在 mode_control（急停 latch + 断线）。
+    // Cross 现在是预设 P6、Select 是模式键，按下的那一刻不能再把底盘清零，
+    // 否则「按 Select 进机械臂模式」时底盘会抽搐一下。
+    if (!frame.connected) {
         return {};
     }
     const bool up = ps2_pressed(frame, Ps2Button::Up);
     const bool down = ps2_pressed(frame, Ps2Button::Down);
     const bool left = ps2_pressed(frame, Ps2Button::Left);
     const bool right = ps2_pressed(frame, Ps2Button::Right);
-    if (ps2_pressed(frame, Ps2Button::Start)) {
-        // 按住 START 和且仅一个方向键，可单独测试一个电机。
-        // 上=M1、右=M2、下=M3、左=M4；同时按住 R2 可反转。
-        DriveCommand result{};
-        if (static_cast<int>(up) + down + left + right != 1) {
-            return result;
-        }
-        const unsigned motor = up ? 0 : right ? 1 : down ? 2 : 3;
-        result.motor[motor] =
-            car_config::kCalibrationDutyPercent * (ps2_pressed(frame, Ps2Button::R2) ? -1 : 1);
-        return result;
-    }
+
     int forward = frame.analog ? axis(frame.left_y, true) : 0;
     int strafe = frame.analog ? axis(frame.left_x, false) : 0;
-    int rotation =
-        ps2_pressed(frame, Ps2Button::L3) && frame.analog ? axis(frame.right_x, false) : 0;
+    // L2 逆时针 / R2 顺时针自转；两键同按相抵为 0。右摇杆整条通道已删。
+    const int rotation =
+        (static_cast<int>(ps2_pressed(frame, Ps2Button::R2)) -
+         static_cast<int>(ps2_pressed(frame, Ps2Button::L2))) *
+        car_config::kRotateDutyPercent;
 
     if (up || down || left || right) {
         forward = (static_cast<int>(up) - static_cast<int>(down)) * car_config::kButtonDutyPercent;
         strafe =
             (static_cast<int>(right) - static_cast<int>(left)) * car_config::kButtonDutyPercent;
-    }
-    const bool l1 = ps2_pressed(frame, Ps2Button::L1);
-    const bool r1 = ps2_pressed(frame, Ps2Button::R1);
-    if (l1 || r1) {
-        rotation = (static_cast<int>(r1) - static_cast<int>(l1)) * car_config::kButtonDutyPercent;
     }
     return mix_drive(forward, strafe, rotation);
 }

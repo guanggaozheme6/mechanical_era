@@ -27,8 +27,8 @@ Ps2Frame decode_ps2_frame(const uint8_t *bytes, std::size_t length) {
     frame.buttons = static_cast<uint16_t>(
         ~(static_cast<uint16_t>(bytes[3]) | (static_cast<uint16_t>(bytes[4]) << 8)));
     if (frame.analog) {
-        frame.right_x = bytes[5];
-        frame.right_y = bytes[6];
+        // 字节 5/6（右摇杆）不再存进 Ps2Frame：右摇杆整条通道已删（D-10），
+        // 报文字节照样收，只是没有读者。
         frame.left_x = bytes[7];
         frame.left_y = bytes[8];
     }
