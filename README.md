@@ -2,15 +2,29 @@
 
 STM32F103 麦克纳姆轮小车与四路舵机控制。控制代码使用 C++14，CubeMX 外设初始化和 ST 驱动保持生成的 C 代码。
 
+## 分层
+
+| 层 | 目录 | 职责 | 不负责 | 本工程文件 |
+| --- | --- | --- | --- | --- |
+| **HAL** | `Core/Src`、`Drivers/STM32F1xx_HAL_Driver` | 操作寄存器、启动外设、ISR 入口（CubeMX 生成，手改只动 `USER CODE`） | 业务逻辑、数据解析 | `MX_TIM8_Init`、`HAL_SPI_TransmitReceive` |
+| **Driver** | `Drivers/inc` + `Drivers/src` | 片选/字节间隙等时序、方向脚与 PWM、编码器计数 | 解析协议、做闭环、认业务 | `ps2`（SPI 帧交换、模拟模式协商、轮询超时）、`outputs`（电机方向+PWM、换向等待、舵机脉宽）、`encoder`（四路 AB 相） |
+| **Algorithm** | `inc` + `src` | 纯数学：IK/FK、PID；不碰硬件、无全局状态、不读时钟 | 硬件操作、状态管理 | `arm_kinematics`（平面 2R）、`pid`（纯 PID + 抗饱和） |
+| **Device** | `inc` + `src` | 协议解析、设备状态机、闭环控制接口 | 底层通信细节 | `ps2_protocol`（报文解码）、`motor`（四路速度闭环）、`arm_joint`（行程状态机）、`arm_pose`（机械臂入口）、`drive_control`（麦轮混控）、`arm_control`（摇杆换算） |
+| **Task** | `inc` + `src` | 业务编排、控制循环、模式状态机 | 底层协议、寄存器 | `main`（1 ms 循环与板载急停）、`mode_control`（模式/按键）、`diagnostics`（串口上报） |
+
+依赖方向：Task → Device → Algorithm，Task → Driver → HAL。参数只有两份：`inc/car_config.hpp`（底盘与摇杆）、`inc/arm_config.hpp`（机械臂）。
+
+**已知的两处跨层调用**（迁移只搬代码，没有改接口，下一版想更干净可以从这里切）：`Drivers/src/ps2.cpp` 直接调 `decode_ps2_frame()`（Driver → Device 协议解析），`Drivers/src/outputs.cpp` 直接调 `motor_update()`（Driver → Device 闭环）。彻底分开的做法分别是「驱动只回原始字节、由 Device 解码」和「闭环调度移出 `apply_motors`」。
+
 ## 阅读顺序
 
 1. `src/main.cpp`：主循环，按键去抖与急停，采集输入、计算指令、执行输出、定时报告。
-2. `src/ps2.cpp`：单个 PS2 接收器的 SPI 通信、模拟模式配置、轮询及超时；`ps2_protocol.cpp` 负责唯一一份报文解码。
+2. `Drivers/src/ps2.cpp`：PS2 接收器的 SPI 通信、模拟模式配置、轮询及超时；`src/ps2_protocol.cpp` 负责唯一一份报文解码。
 3. `src/mode_control.cpp`：手柄操作逻辑，两个模式入口、按键边沿位图、`L3+R3` 急停组合、预设绑定表。
 4. `src/arm_pose.cpp`：机械臂编排层，预设/笛卡尔入口 → 解算 → 关节层，以及反馈聚合。
 5. `src/arm_kinematics.cpp`（平面 2R 逆解/正解）与 `src/arm_joint.cpp`（四路行程状态机）：纯计算，不碰 HAL，可在 PC 上单测。
-6. `src/drive_control.cpp`：底盘麦轮混合与按键平移/自转；`src/arm_control.cpp`：摇杆换算与死区；`src/outputs.cpp`：方向脚、PWM、换向等待与舵机脉宽。
-7. `src/diagnostics.cpp`：串口状态、机械臂解算反馈和 M4 硬件诊断。
+6. `src/motor.cpp`（速度闭环）+ `src/pid.cpp`（算法）+ `Drivers/src/encoder.cpp`（编码器计数）：一个电机被拆在三层里的示例。
+7. `src/drive_control.cpp`：底盘麦轮混合与按键平移/自转；`Drivers/src/outputs.cpp`：方向脚、PWM、换向等待与舵机脉宽。
 8. 参数：`inc/car_config.hpp`（轮位、极性、麦轮布局、摇杆死区、自转占空比）与 `inc/arm_config.hpp`（几何、限位、工作区、速度、8 条预设的唯一真值）。
 
 数据按 `ps2_update → ps2_read → mode_control_update → apply_motors / apply_servos` 流动。PS2 报文只解码一次，程序中的按键位统一为 1 表示按下。调试统计不参与控制决策。

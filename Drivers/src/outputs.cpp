@@ -1,6 +1,6 @@
 #include "outputs.hpp"
 #include "main.h"
-#include "motor_pid.hpp"
+#include "motor.hpp"
 #include <algorithm>
 
 extern "C" TIM_HandleTypeDef htim1;
@@ -39,7 +39,7 @@ void apply_servos(ArmCommand command) {
 }
 
 void apply_motors(DriveCommand command) {
-    command = motor_pid_update(command, HAL_GetTick());
+    command = motor_update(command, HAL_GetTick());
     int requested[4];
     bool reversing = false;
     for (unsigned i = 0; i < 4; ++i) {
@@ -76,7 +76,7 @@ void apply_motors(DriveCommand command) {
 }
 
 void init_outputs() {
-    motor_pid_init();
+    motor_init();
     // 先写入停止状态，再启动 PWM
     for (unsigned i = 0; i < 4; ++i) {
         const auto &motor = kMotors[i];

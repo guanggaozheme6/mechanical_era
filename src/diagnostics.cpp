@@ -1,5 +1,5 @@
 #include "diagnostics.hpp"
-#include "motor_pid.hpp"
+#include "motor.hpp"
 #include "ps2.hpp"
 #include <cstdio>
 
@@ -31,9 +31,9 @@ void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_s
         // M4 是左后轮；输出其闭环状态，排查单轮编码器或 PID 参数问题。
         std::snprintf(message, sizeof(message),
                       "PID4 target=%d ticks=%d pwm=%d stalled=%u\r\n",
-                      motor_pid_status(3).target, motor_pid_status(3).encoder_ticks,
-                      motor_pid_status(3).output,
-                      static_cast<unsigned>(motor_pid_status(3).stalled));
+                      motor_status(3).target, motor_status(3).encoder_ticks,
+                      motor_status(3).output,
+                      static_cast<unsigned>(motor_status(3).stalled));
     if (hardware_length > 0 && static_cast<unsigned>(hardware_length) < sizeof(message)) {
         HAL_UART_Transmit(&huart3, reinterpret_cast<uint8_t *>(message),
                           static_cast<uint16_t>(hardware_length), 20);
