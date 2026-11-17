@@ -11,6 +11,13 @@
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 机械臂摇杆换算：0..255 → -100..100
+ * @details 先扣 kArmDeadzone，再按半轴满量程（127 / 128）归一化；invert 决定极性。
+ * @param axis 摇杆原始值（0..255，128 为中位）
+ * @param invert 是否反转极性（left_y 推上 = 0x00，所以要反转）
+ * @return -100..100 的行程百分比
+ */
 int arm_axis_percent(uint8_t axis, bool invert) {
     const int delta = static_cast<int>(axis) - 128;
     const int distance = delta < 0 ? -delta : delta;

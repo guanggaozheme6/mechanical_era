@@ -37,8 +37,6 @@ extern "C" void main_task() {
     uint32_t key_change_ms = HAL_GetTick();
 
     while (true) {
-        // 板载 Key：20 ms 去抖后按一次锁定急停，再按一次解除。
-        // 手柄断线时 mode_control 也会自行停止，这条是硬件层面的第二道保险。
         const bool key_now = HAL_GPIO_ReadPin(Key_GPIO_Port, Key_Pin) == GPIO_PIN_RESET;
         if (key_now != key_sample) {
             key_sample = key_now;
@@ -57,10 +55,8 @@ extern "C" void main_task() {
         const bool stopped = output.stopped || emergency_stop;
         const DriveCommand drive = stopped ? DriveCommand{} : output.drive;
         apply_motors(drive);
-        // 急停时机械臂保持当前姿态（mode_control 已处理），不会甩回中位。
         apply_servos(output.arm);
 
-        // 标定时臂是静止的（松手即停），500 ms 一次够抄数。
         const uint32_t report_ms = kReportMs;
         if (HAL_GetTick() - last_report >= report_ms) {
             report_status(frame, drive, stopped, key_pressed,

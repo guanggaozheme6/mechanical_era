@@ -17,6 +17,15 @@ extern "C" UART_HandleTypeDef huart3;
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 上报 PS2 + 底盘状态，并附带 M4 的闭环与寄存器实配
+ * @details 三行：主状态（op= 操作模式，mode= 协议模式字）、PID4 闭环、M4 硬件配置。
+ * @param frame 本帧手柄数据
+ * @param command 本帧实际下发的四路电机指令
+ * @param emergency_stop 板载 Key 的急停状态
+ * @param key_pressed 板载 Key 当前电平（去抖后）
+ * @param arm_mode true 打 op=ARM，false 打 op=DRV
+ */
 void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_stop,
                    bool key_pressed, bool arm_mode) {
     char message[192];
@@ -73,6 +82,12 @@ void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_s
     }
 }
 
+/**
+ * @brief 上报机械臂状态
+ * @details S1..S4 前缀与位置不变（标定手法依赖它），后面追加解算反馈。
+ * @param command 本帧四路舵机指令
+ * @param feedback 解算与状态反馈
+ */
 void report_arm(const ArmCommand &command, const ArmFeedback &feedback) {
     // 新格式约 105 字符，128 已无余量；缓冲按 arm_pose_v0.3 §8 加到 160。
     char message[160];

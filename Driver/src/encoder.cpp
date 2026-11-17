@@ -14,8 +14,8 @@ namespace encoder {
 /* Private variables ---------------------------------------------------------*/
 namespace {
 
-TIM_HandleTypeDef g_timer[kCount]; // 四路编码器的定时器句柄
-uint16_t g_previous[kCount];       // 上一次读到的计数（算增量用）
+TIM_HandleTypeDef g_timer[kCount]; 
+uint16_t g_previous[kCount];
 
 /**
  * @brief 配置四路编码器引脚与复用
@@ -84,6 +84,10 @@ void configure_timer(TIM_HandleTypeDef &timer, TIM_TypeDef *instance) {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 初始化四路编码器
+ * @details 配置引脚和定时器，并把计数基准清零。
+ */
 void init() {
     configure_pins();
     configure_timer(g_timer[0], TIM2); // M1: PA15/PB3
@@ -95,6 +99,12 @@ void init() {
     }
 }
 
+/**
+ * @brief 读一路编码器的计数增量
+ * @details int16_t 差值天然处理 16 位回绕；读完即前移内部基准。
+ * @param channel 通道号 0..3
+ * @return 带符号增量；越界返回 0
+ */
 int delta_ticks(unsigned channel) {
     if (channel >= kCount) {
         return 0;

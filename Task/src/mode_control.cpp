@@ -16,8 +16,7 @@ namespace {
 OperationMode g_mode = OperationMode::Drive;
 bool g_latched_stop = false; // L3+R3 锁定的急停，再按一次解除
 
-// 边沿检测只用「上一帧按键位图」一个变量。旧版为每个键维护 g_xxx_prev，
-// 加一个键要改四处，还会漏同步（resync_arm_edges）。
+// 边沿检测只用「上一帧按键位图」一个变量
 uint16_t g_prev_buttons = 0;
 
 // 急停组合的两段状态：arming = 同按计时中，fired = 已触发、等两键都松开。
@@ -29,7 +28,7 @@ uint32_t g_combo_since_ms = 0;
 
 /**
  * @brief 一条预设绑定
- * @note pose 就是 arm_config::Pose 的索引（0..7），表驱动，加第 9 条只加一行。
+ * @note pose 就是 arm_config::Pose 的索引
  */
 struct PresetBind {
     Ps2Button button;
@@ -62,7 +61,7 @@ bool pressed(const Ps2Frame &frame, Ps2Button button) { return ps2_pressed(frame
 
 /**
  * @brief 上升沿检测（对上一帧按键位图）
- * @details PS2 20 ms 才刷新一次，直接读电平会让"按住 1 秒"触发几十次。
+ * @details PS2 20 ms 才刷新一次
  * @param frame 手柄帧
  * @param button 按键
  * @return true 表示本帧刚按下
@@ -102,13 +101,9 @@ void update_estop_combo(const Ps2Frame &frame, uint32_t now_ms) {
 
 /**
  * @brief 机械臂模式的按键与摇杆处理
- * @details 只把按键换成"意图"（速度 / 预设索引），平方律、限位、积分全在 arm_pose 里，
- *          这里不认识任何速度常数。R3 单按没有分支：它只是 L3+R3 急停组合的另一半。
  * @param frame 手柄帧
  */
 void update_arm_mode(const Ps2Frame &frame) {
-    // 预设 > 摇杆：命中预设的那一帧丢弃摇杆速度。arm_pose_request 内部也会清，
-    // 这里显式清一次是为了让同一帧的两条入口语义一致（不回弹）。
     bool requested = false;
     for (unsigned i = 0; i < kPresetCount; ++i) {
         if (edge(frame, kPresetBinds[i].button)) {
@@ -118,7 +113,6 @@ void update_arm_mode(const Ps2Frame &frame) {
     }
 
     if (requested || !frame.analog) {
-        // 绿灯数字模式没有模拟量：显式传 0，不依赖解码默认值 128。
         arm_pose_set_cart_velocity(0.0F, 0.0F);
     } else {
         const int forward = arm_axis_percent(frame.left_x, false);
@@ -129,10 +123,8 @@ void update_arm_mode(const Ps2Frame &frame) {
         arm_pose_set_cart_velocity(vx, vy);
     }
 
-    // 夹爪 servo[2]：L2 松 / R2 紧；腕 roll servo[3]：L1 逆 / R1 顺。
-    // 方向约定以 arm_pose_v0.3 §7.4 为准：gripper 正 = 张开(松)、负 = 夹紧。
-    // 轴号 2/3 与 arm_config 的通道角色一致；0/1 会被 arm_pose_joint_jog 拒绝，
-    // 所以这里不需要再判一次模式 —— 笛卡尔与 jog 本来就允许同帧共存。
+    // 夹爪 servo[2]：L2 松 / R2 紧；腕 roll servo[3]：L1 逆 / R1 顺
+    // 方向约定以gripper 正 = 张开(松)、负 = 夹紧
     int gripper = 0;
     if (pressed(frame, Ps2Button::L2)) {
         gripper += 100;
@@ -160,6 +152,10 @@ void update_arm_mode(const Ps2Frame &frame) {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 初始化模式状态机与机械臂
+ * @param now_ms 当前毫秒时基
+ */
 void mode_control_init(uint32_t now_ms) {
     g_mode = OperationMode::Drive;
     g_latched_stop = false;
@@ -170,6 +166,13 @@ void mode_control_init(uint32_t now_ms) {
     arm_pose_init(now_ms);
 }
 
+/**
+ * @brief 每轮主循环调用一次：边沿检测、急停组合、模式分发
+ * @details 只产出"意图"；平方律、限位、积分都在 arm_pose。
+ * @param frame 本帧手柄数据
+ * @param now_ms 当前毫秒时基
+ * @return 本帧的底盘与机械臂指令（断线时停止并保持机械臂姿态）
+ */
 ControlOutput mode_control_update(const Ps2Frame &frame, uint32_t now_ms) {
     ControlOutput output;
 
@@ -177,9 +180,7 @@ ControlOutput mode_control_update(const Ps2Frame &frame, uint32_t now_ms) {
     update_estop_combo(frame, now_ms);
     const bool stopped = g_latched_stop || !frame.connected;
 
-    // 2. 模式入口。两个键各自幂等；急停锁定时不响应，避免停机期间误切。
-    //    切换瞬间清笛卡尔速度并同步边沿位图：底盘模式下按住不放的键
-    //    不会在切进机械臂模式的第一帧被当成一次上升沿。
+    // 2. 模式入口：Start 切 Drive，Select 切 Arm。切换时机械臂保持姿态。
     const bool start_edge = edge(frame, Ps2Button::Start);
     const bool select_edge = edge(frame, Ps2Button::Select);
     if (!stopped && start_edge && g_mode != OperationMode::Drive) {
@@ -192,7 +193,7 @@ ControlOutput mode_control_update(const Ps2Frame &frame, uint32_t now_ms) {
         g_prev_buttons = frame.buttons;
     }
 
-    // 3. 按模式分发。
+    // 3. 按模式分发
     if (g_mode == OperationMode::Drive) {
         output.drive = stopped ? DriveCommand{} : drive_from_ps2(frame);
     } else {

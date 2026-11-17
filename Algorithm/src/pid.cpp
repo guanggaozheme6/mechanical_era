@@ -26,6 +26,15 @@ float clamp(float value, float lower, float upper) {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 配置增益与限幅，并把积分清零
+ * @param pid 控制器实例
+ * @param kp 比例增益
+ * @param ki 积分增益
+ * @param integral_limit 积分限幅
+ * @param output_min 输出下限
+ * @param output_max 输出上限
+ */
 void pid_configure(Pid &pid, float kp, float ki, float integral_limit, float output_min,
                    float output_max) {
     pid.kp = kp;
@@ -36,8 +45,20 @@ void pid_configure(Pid &pid, float kp, float ki, float integral_limit, float out
     pid.integral = 0.0F;
 }
 
+/**
+ * @brief 清积分
+ * @param pid 控制器实例
+ */
 void pid_reset(Pid &pid) { pid.integral = 0.0F; }
 
+/**
+ * @brief 推一拍
+ * @details 先算候选积分并限幅，再算输出并限幅；只有没饱和才把候选积分写回。
+ * @param pid 控制器实例
+ * @param error 当前误差
+ * @param dt_s 采样周期（秒）
+ * @return 限幅到 [output_min, output_max] 的输出
+ */
 float pid_update(Pid &pid, float error, float dt_s) {
     const float candidate_integral =
         clamp(pid.integral + error * dt_s, -pid.integral_limit, pid.integral_limit);

@@ -61,6 +61,15 @@ int axis(uint8_t value, bool invert) {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 麦轮逆运动学混控
+ * @details 归一化到峰值不超过 kMaxDutyPercent，再按轮位映射与极性输出。
+ * @param forward 前进分量
+ * @param strafe 向右平移分量
+ * @param rotation 顺时针自转分量（差速量，不是角速度）
+ * @param layout 麦轮布局，决定横向符号
+ * @return 四路电机占空比
+ */
 DriveCommand mix_drive(int forward, int strafe, int rotation, car_config::MecanumLayout layout) {
     // O 型与 X 型的横向滚子方向相反。轮序为左前、右前、左后、右后。
     // 旋转指令仍表示归一化的左右差速量，不是角速度。
@@ -83,6 +92,12 @@ DriveCommand mix_drive(int forward, int strafe, int rotation, car_config::Mecanu
     return result;
 }
 
+/**
+ * @brief 手柄 → 底盘指令（模式一）
+ * @details 只挡断线；Cross/Select 不再清底盘，停车判定的唯一真值在 mode_control。
+ * @param frame 解码后的手柄帧
+ * @return 四路电机占空比；断线时全零
+ */
 DriveCommand drive_from_ps2(const Ps2Frame &frame) {
     // 这里只挡断线：停车判定的唯一真值在 mode_control（急停 latch + 断线）。
     // Cross 现在是预设 P6、Select 是模式键，按下的那一刻不能再把底盘清零，

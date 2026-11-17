@@ -14,12 +14,13 @@
 /* Private typedef -----------------------------------------------------------*/
 namespace {
 
-constexpr uint32_t kUpdateMs = 10;        // 闭环周期
+constexpr uint32_t kUpdateMs = 10;        // 最小推进间隔
+constexpr uint32_t kMaxDtMs = 50;         // dt 上限：主循环卡顿时积分不许跳步
 constexpr uint32_t kEncoderStallMs = 300; // 无计数多久判堵转
 // 100% 目标速度对应每个 10 ms 控制周期的编码器计数。实车可在此处统一调速。
 constexpr float kTicksAtFullSpeed = 20.0F;
 
-// PID 参数属于电机本体，不属于算法层：换电机/换底盘只改这四个数。
+// PID 参数属于电机本体，不属于算法层：换底盘只改这四个数。
 constexpr float kProportionalGain = 3.0F;
 constexpr float kIntegralGain = 8.0F;
 constexpr float kIntegralLimit = 12.5F;
@@ -55,9 +56,10 @@ int magnitude(int value) { return value < 0 ? -value : value; }
  * @param index 电机序号 0..3
  * @param target 目标占空比（-100..100）
  * @param now_ms 当前毫秒时基
+ * @param dt_s 本次推进的真实间隔（秒），由调用方按实际时基算出
  * @return 该路实际输出占空比（-100..100）
  */
-int update_one(unsigned index, int target, uint32_t now_ms) {
+int update_one(unsigned index, int target, uint32_t now_ms, float dt_s) {
     Motor &motor = g_motor[index];
     const int ticks = magnitude(encoder::delta_ticks(index));
     motor.target = target;
@@ -90,7 +92,7 @@ int update_one(unsigned index, int target, uint32_t now_ms) {
 
     const float desired_ticks = magnitude(target) * kTicksAtFullSpeed / 100.0F;
     const float error = desired_ticks - static_cast<float>(ticks);
-    const float output = pid_update(motor.pid, error, static_cast<float>(kUpdateMs) / 1000.0F);
+    const float output = pid_update(motor.pid, error, dt_s);
     motor.output = static_cast<int>(output + 0.5F);
     motor.stalled = false;
     return target < 0 ? -motor.output : motor.output;
@@ -100,6 +102,10 @@ int update_one(unsigned index, int target, uint32_t now_ms) {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 初始化四路编码器与 PID 参数
+ * @note 由 init_outputs() 调用，必须先于任何 motor_update()。
+ */
 void motor_init() {
     encoder::init();
     const uint32_t now_ms = HAL_GetTick();
@@ -111,9 +117,17 @@ void motor_init() {
     g_last_update_ms = now_ms - kUpdateMs;
 }
 
+/**
+ * @brief 推一拍闭环（10 ms 周期）
+ * @details 周期间隔内沿用上一拍输出，方向跟随当前目标。
+ * @param target 四路目标占空比（-100..100）
+ * @param now_ms 当前毫秒时基
+ * @return 四路要写进 PWM 的占空比
+ */
 DriveCommand motor_update(const DriveCommand &target, uint32_t now_ms) {
     DriveCommand output{};
-    if (now_ms - g_last_update_ms < kUpdateMs) {
+    const uint32_t elapsed_ms = now_ms - g_last_update_ms;
+    if (elapsed_ms < kUpdateMs) {
         // 周期间隔内沿用上一次的输出，方向跟随当前目标。
         for (unsigned i = 0; i < 4; ++i) {
             output.motor[i] = target.motor[i] == 0
@@ -124,12 +138,20 @@ DriveCommand motor_update(const DriveCommand &target, uint32_t now_ms) {
         return output;
     }
     g_last_update_ms = now_ms;
+    // dt 用真实间隔：主循环 HAL_Delay(1) 有抖动、换向等待的 2 ms 也会插进来。
+    // 固定按 10 ms 积分会让积分项系统性偏小，这里钳住上限，卡顿时不至于积分跳步。
+    const float dt_s = static_cast<float>(elapsed_ms > kMaxDtMs ? kMaxDtMs : elapsed_ms) / 1000.0F;
     for (unsigned i = 0; i < 4; ++i) {
-        output.motor[i] = update_one(i, target.motor[i], now_ms);
+        output.motor[i] = update_one(i, target.motor[i], now_ms, dt_s);
     }
     return output;
 }
 
+/**
+ * @brief 查询某路电机的闭环状态
+ * @param motor 电机序号 0..3
+ * @return 状态快照；越界返回默认值
+ */
 MotorStatus motor_status(unsigned motor) {
     if (motor >= 4) {
         return {};

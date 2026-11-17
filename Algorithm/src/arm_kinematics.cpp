@@ -37,8 +37,19 @@ bool finite(float value) { return std::isfinite(value); }
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 行程百分比限幅到 -100..100
+ * @param percent 输入百分比
+ * @return 限幅结果
+ */
 float clamp_percent(float percent) { return clampf(percent, -100.0F, 100.0F); }
 
+/**
+ * @brief 行程百分比 → 连杆角
+ * @param calib 该关节的标定
+ * @param percent 行程百分比
+ * @return 连杆角（度）；非有限输入返回 zero_deg
+ */
 float percent_to_deg(const JointCalib &calib, float percent) {
     if (!finite(percent) || !finite(calib.zero_deg) || !finite(calib.deg_per_percent)) {
         return calib.zero_deg;
@@ -47,6 +58,12 @@ float percent_to_deg(const JointCalib &calib, float percent) {
     return finite(deg) ? deg : calib.zero_deg;
 }
 
+/**
+ * @brief 连杆角 → 行程百分比
+ * @param calib 该关节的标定
+ * @param deg 连杆角（度）
+ * @return 行程百分比；非有限输入或 deg_per_percent == 0 时返回 0
+ */
 float deg_to_percent(const JointCalib &calib, float deg) {
     // 双保险：上游任何一环出 NaN，这里都不允许把 NaN 转成 int 送进 TIM8。
     if (!finite(deg) || !finite(calib.zero_deg) || !finite(calib.deg_per_percent) ||
@@ -57,6 +74,15 @@ float deg_to_percent(const JointCalib &calib, float deg) {
     return finite(percent) ? percent : 0.0F;
 }
 
+/**
+ * @brief 正解：两路行程百分比 → 末端坐标
+ * @details 逐级 percent_to_deg 再按两段连杆求和，全程 float，供闭环积分用。
+ * @param model 几何模型
+ * @param shoulder_percent 大臂行程百分比
+ * @param elbow_percent 小臂行程百分比
+ * @param x_mm 输出：末端 x（mm）
+ * @param y_mm 输出：末端 y（mm）
+ */
 void solve_forward(const Model &model, float shoulder_percent, float elbow_percent, float &x_mm,
                    float &y_mm) {
     const float t1 = percent_to_deg(model.shoulder, shoulder_percent) * kDegToRad;
@@ -66,6 +92,14 @@ void solve_forward(const Model &model, float shoulder_percent, float elbow_perce
     y_mm = model.upper_mm * std::sin(t1) + model.fore_mm * std::sin(sum);
 }
 
+/**
+ * @brief 平面 2R 逆解（含五道数值防护）
+ * @details 顺序：非法输入兜底 → 圆环钳位 → 余弦定理求肘/肩角 → 角度限位钳位 → FK 自检。
+ * @param model 几何模型
+ * @param x_mm 目标腕点 x（mm）
+ * @param y_mm 目标腕点 y（mm）
+ * @return 逆解结果；不可达 / 超限 / 非法输入一律返回有限数值，绝不返回 NaN
+ */
 Solution solve_xy(const Model &model, float x_mm, float y_mm) {
     Solution solution{};
     solution.reachable = true;

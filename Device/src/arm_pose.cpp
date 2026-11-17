@@ -195,6 +195,11 @@ ArmCommand make_command() {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 初始化：记时基、四路归零、8 条预设各做一次 IK 自检
+ * @details 标定版（ARM_BRINGUP）走另一条路：直接给 kBringupPercent，跳过全部钳位。
+ * @param now_ms 当前毫秒时基
+ */
 void arm_pose_init(uint32_t now_ms) {
     g_cart_vx = 0.0F;
     g_cart_vy = 0.0F;
@@ -226,6 +231,11 @@ void arm_pose_init(uint32_t now_ms) {
     refresh_feedback();
 }
 
+/**
+ * @brief 请求第 index 条预设
+ * @details 进门先清笛卡尔速度；越界或该条自检没过则拒绝下发并置 at_wall。
+ * @param index 预设索引 0..7
+ */
 void arm_pose_request(unsigned index) {
     if (kBringup) {
         return;
@@ -255,6 +265,12 @@ void arm_pose_request(unsigned index) {
     arm_joint::set_target(g_bank.channel[arm_config::kWristServo], pose.wrist_percent);
 }
 
+/**
+ * @brief 绝对坐标请求（动作序列 / 上位机）
+ * @param x_mm 目标 x（mm）
+ * @param y_mm 目标 y（mm）
+ * @return true 已下发；false 被钳位或超限
+ */
 bool arm_pose_request_xy(float x_mm, float y_mm) {
     if (kBringup) {
         return false;
@@ -269,6 +285,12 @@ bool arm_pose_request_xy(float x_mm, float y_mm) {
     return ok;
 }
 
+/**
+ * @brief 每帧给一次末端速度（mm/s）
+ * @note 一次性：update 后清零，松手必须传 0。
+ * @param vx_mm_per_s 末端 x 速度
+ * @param vy_mm_per_s 末端 y 速度
+ */
 void arm_pose_set_cart_velocity(float vx_mm_per_s, float vy_mm_per_s) {
     if (kBringup) {
         return; // 标定版不接受任何运动输入
@@ -277,6 +299,13 @@ void arm_pose_set_cart_velocity(float vx_mm_per_s, float vy_mm_per_s) {
     g_cart_vy = finite(vy_mm_per_s) ? vy_mm_per_s : 0.0F;
 }
 
+/**
+ * @brief 摇杆百分比 → 末端速度（保号平方律 + 合速度归一化）
+ * @param forward_percent 前伸方向摇杆百分比（-100..100）
+ * @param lift_percent 抬升方向摇杆百分比（-100..100）
+ * @param vx_mm_per_s 输出：末端 x 速度
+ * @param vy_mm_per_s 输出：末端 y 速度
+ */
 void arm_pose_stick_velocity(int forward_percent, int lift_percent, float &vx_mm_per_s,
                              float &vy_mm_per_s) {
     const float fx = clampf(static_cast<float>(forward_percent), -100.0F, 100.0F) / 100.0F;
@@ -296,6 +325,13 @@ void arm_pose_stick_velocity(int forward_percent, int lift_percent, float &vx_mm
     }
 }
 
+/**
+ * @brief 单关节速度（单位是摇杆百分比）
+ * @details 白名单只放 2（夹爪）/ 3（腕 roll）；0/1 返回 false，保证"解算关节没有手动入口"。
+ * @param axis 通道号
+ * @param stick_percent 摇杆百分比（-100..100）
+ * @return true 已接受；false 被拒绝（标定版 / 轴 0、1）
+ */
 bool arm_pose_joint_jog(unsigned axis, int stick_percent) {
     if (kBringup) {
         return false; // 标定版只认 kBringupPercent，不吃手柄
@@ -309,6 +345,11 @@ bool arm_pose_joint_jog(unsigned axis, int stick_percent) {
     return true;
 }
 
+/**
+ * @brief 推进一帧：积分 + 关节插值 + 刷新反馈
+ * @param now_ms 当前毫秒时基
+ * @return 本帧四路行程百分比
+ */
 ArmCommand arm_pose_update(uint32_t now_ms) {
     uint32_t elapsed = now_ms - g_last_ms; // 无符号减法，时间回绕也正确
     if (elapsed > kMotion.max_elapsed_ms) {
@@ -329,6 +370,12 @@ ArmCommand arm_pose_update(uint32_t now_ms) {
     return make_command();
 }
 
+/**
+ * @brief 冻结一帧：保持当前姿态
+ * @note 仍然推进时基，否则解除急停的第一帧会因为累积时间而跳一大段。
+ * @param now_ms 当前毫秒时基
+ * @return 当前四路行程百分比
+ */
 ArmCommand arm_pose_hold(uint32_t now_ms) {
     g_last_ms = now_ms;
     g_cart_vx = 0.0F;
@@ -338,6 +385,11 @@ ArmCommand arm_pose_hold(uint32_t now_ms) {
     return make_command();
 }
 
+/**
+ * @brief 取某一路当前的整数行程百分比
+ * @param joint 关节序号 0..3
+ * @return -100..100；越界返回 0
+ */
 int arm_pose_value(unsigned joint) {
     if (joint >= kServoCount) {
         return 0;
@@ -345,10 +397,26 @@ int arm_pose_value(unsigned joint) {
     return arm_joint::output_percent(g_bank.channel[joint]);
 }
 
+/**
+ * @brief 四路是否都已到达目标
+ * @return true 表示四路都在 settle 容差内
+ */
 bool arm_pose_at_target() { return arm_joint::bank_at_target(g_bank, kMotion.settle_percent); }
 
+/**
+ * @brief 夹爪接在哪一路舵机上
+ * @return 通道号（arm_config::kGripperServo）
+ */
 unsigned arm_pose_gripper_servo() { return arm_config::kGripperServo; }
 
+/**
+ * @brief 取最新反馈快照
+ * @return ArmFeedback 副本
+ */
 ArmFeedback arm_pose_feedback() { return g_fb; }
 
+/**
+ * @brief 上电自检结果
+ * @return bit i = 第 i 条预设不可用（0 = 八条全好）
+ */
 unsigned arm_pose_bad_pose_mask() { return g_bad_pose_mask; }

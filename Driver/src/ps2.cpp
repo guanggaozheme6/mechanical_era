@@ -100,6 +100,12 @@ void configure_analog() {
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 初始化接收器
+ * @details 片选置高、使能 SPI 让 SCK 落到空闲高电平、等 300 ms 上电稳定，并把轮询与
+ *          协商计时器拨到"立刻到点"，让第一帧马上发出。
+ * @param spi 已初始化的 SPI 句柄
+ */
 void ps2_init(SPI_HandleTypeDef &spi) {
     receiver_spi = &spi;
     latest_frame = {};
@@ -116,6 +122,10 @@ void ps2_init(SPI_HandleTypeDef &spi) {
     last_config = HAL_GetTick() - kConfigMs;
 }
 
+/**
+ * @brief 推进一次轮询（20 ms 一次）
+ * @details 交换一帧 → 三重校验 → 更新诊断统计 → 没连上或不在模拟模式时每 1 s 重协商。
+ */
 void ps2_update() {
     if (receiver_spi == nullptr) {
         return;
@@ -154,6 +164,10 @@ void ps2_update() {
     }
 }
 
+/**
+ * @brief 取最新一帧
+ * @return 超过 100 ms 无有效报文时返回断线空帧
+ */
 Ps2Frame ps2_read() {
     if (static_cast<uint32_t>(HAL_GetTick() - last_valid_ms) >= kTimeoutMs) {
         return {};

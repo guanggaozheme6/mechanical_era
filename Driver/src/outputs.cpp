@@ -41,6 +41,10 @@ int previous_motor_duty[4] = {}; // 上一帧占空比，用于换向检测
 
 /* Exported functions --------------------------------------------------------*/
 
+/**
+ * @brief 下发四路舵机行程百分比
+ * @param command 四路行程百分比（-100..100）
+ */
 void apply_servos(ArmCommand command) {
     // TIM8 每 1 微秒计数一次（72 MHz / 72），因此比较值就是脉宽的微秒数。
     constexpr int kNeutralUs = 1500;
@@ -53,17 +57,29 @@ void apply_servos(ArmCommand command) {
     }
 }
 
+/**
+ * @brief 下发四路电机指令
+ * @param command 四路目标占空比（-100..100）
+ */
 void apply_motors(DriveCommand command) {
     command = motor_update(command, HAL_GetTick());
     int requested[4];
-    bool reversing = false;
+    bool reversed[4];
+    bool any_reversing = false;
     for (unsigned i = 0; i < 4; ++i) {
         requested[i] = std::max(-100, std::min(100, command.motor[i]));
-        reversing |= requested[i] * previous_motor_duty[i] < 0;
+        // 上一拍与这一拍都非零且异号才算换向；从停车起步（上一拍 0）不算。
+        reversed[i] = requested[i] * previous_motor_duty[i] < 0;
+        any_reversing |= reversed[i];
     }
-    if (reversing) {
-        // 换向必须先把 H 桥全关 2 ms，否则反电动势会灌进驱动。
-        for (const Motor &motor : kMotors) {
+    if (any_reversing) {
+        // 只关需要换向的那几路：换向必须先断开 H 桥 2 ms，否则反电动势会灌进驱动。
+        // 其余通道保持原占空比继续输出，避免一路换向把整车拖得顿一下。
+        for (unsigned i = 0; i < 4; ++i) {
+            if (!reversed[i]) {
+                continue;
+            }
+            const Motor &motor = kMotors[i];
             __HAL_TIM_SET_COMPARE(&htim1, motor.channel, 0);
             HAL_GPIO_WritePin(motor.a_port, motor.a_pin, GPIO_PIN_RESET);
             HAL_GPIO_WritePin(motor.b_port, motor.b_pin, GPIO_PIN_RESET);
@@ -73,7 +89,7 @@ void apply_motors(DriveCommand command) {
     for (unsigned i = 0; i < 4; ++i) {
         const Motor &motor = kMotors[i];
         const int duty = requested[i];
-        if (!reversing && duty == previous_motor_duty[i]) {
+        if (!reversed[i] && duty == previous_motor_duty[i]) {
             continue;
         }
         HAL_GPIO_WritePin(motor.a_port, motor.a_pin, GPIO_PIN_RESET);
@@ -91,6 +107,9 @@ void apply_motors(DriveCommand command) {
     }
 }
 
+/**
+ * @brief 初始化所有电机/舵机输出
+ */
 void init_outputs() {
     motor_init();
     // 先写入停止状态，再启动 PWM
