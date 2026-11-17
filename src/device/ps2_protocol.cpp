@@ -1,4 +1,4 @@
-#include "ps2_protocol.hpp"
+#include "device/ps2_protocol.hpp"
 
 std::size_t ps2_packet_size(uint8_t mode) {
     switch (mode) {

@@ -1,6 +1,6 @@
-#include "motor.hpp"
-#include "encoder.hpp"
-#include "pid.hpp"
+#include "device/motor.hpp"
+#include "driver/encoder.hpp"
+#include "algorithm/pid.hpp"
 #include "main.h"
 
 namespace {

@@ -6,26 +6,28 @@ STM32F103 麦克纳姆轮小车与四路舵机控制。控制代码使用 C++14�
 
 | 层 | 目录 | 职责 | 不负责 | 本工程文件 |
 | --- | --- | --- | --- | --- |
-| **HAL** | `Core/Src`、`Drivers/STM32F1xx_HAL_Driver` | 操作寄存器、启动外设、ISR 入口（CubeMX 生成，手改只动 `USER CODE`） | 业务逻辑、数据解析 | `MX_TIM8_Init`、`HAL_SPI_TransmitReceive` |
-| **Driver** | `Drivers/inc` + `Drivers/src` | 片选/字节间隙等时序、方向脚与 PWM、编码器计数 | 解析协议、做闭环、认业务 | `ps2`（SPI 帧交换、模拟模式协商、轮询超时）、`outputs`（电机方向+PWM、换向等待、舵机脉宽）、`encoder`（四路 AB 相） |
-| **Algorithm** | `inc` + `src` | 纯数学：IK/FK、PID；不碰硬件、无全局状态、不读时钟 | 硬件操作、状态管理 | `arm_kinematics`（平面 2R）、`pid`（纯 PID + 抗饱和） |
-| **Device** | `inc` + `src` | 协议解析、设备状态机、闭环控制接口 | 底层通信细节 | `ps2_protocol`（报文解码）、`motor`（四路速度闭环）、`arm_joint`（行程状态机）、`arm_pose`（机械臂入口）、`drive_control`（麦轮混控）、`arm_control`（摇杆换算） |
-| **Task** | `inc` + `src` | 业务编排、控制循环、模式状态机 | 底层协议、寄存器 | `main`（1 ms 循环与板载急停）、`mode_control`（模式/按键）、`diagnostics`（串口上报） |
+| **HAL** | `Core/Src`、`Drivers/STM32F1xx_HAL_Driver` | 操作寄存器、启动外设、ISR 入口（CubeMX 生成，手改只动 `USER CODE`） | 业务逻辑、数据解析 | `MX_TIM8_Init`、`HAL_SPI_TransmitReceive`；`Core/Src/main.c` 只调一次 `main_task()` |
+| **Driver** | `inc/driver` + `src/driver` | 片选/字节间隙等时序、方向脚与 PWM、编码器计数 | 解析协议、做闭环、认业务 | `ps2`（SPI 帧交换、模拟模式协商、轮询超时）、`outputs`（电机方向+PWM、换向等待、舵机脉宽）、`encoder`（四路 AB 相） |
+| **Algorithm** | `inc/algorithm` + `src/algorithm` | 纯数学：IK/FK、PID；不碰硬件、无全局状态、不读时钟 | 硬件操作、状态管理 | `arm_kinematics`（平面 2R）、`pid`（纯 PID + 抗饱和） |
+| **Device** | `inc/device` + `src/device` | 协议解析、设备状态机、闭环控制接口 | 底层通信细节 | `ps2_protocol`（报文解码）、`motor`（四路速度闭环）、`arm_joint`（行程状态机）、`arm_pose`（机械臂入口）、`drive_control`（麦轮混控）、`arm_control`（摇杆换算） |
+| **Task** | `inc/task` + `src/task` | 业务编排、控制循环、模式状态机 | 底层协议、寄存器 | `main`（1 ms 循环与板载急停）、`mode_control`（模式/按键）、`diagnostics`（串口上报） |
 
-依赖方向：Task → Device → Algorithm，Task → Driver → HAL。参数只有两份：`inc/car_config.hpp`（底盘与摇杆）、`inc/arm_config.hpp`（机械臂）。
+- 依赖方向：Task → Device → Algorithm，Task → Driver → HAL。`#include "层/文件名"` 带前缀，编译只需 `-Iinc`。
+- 头文件里唯一没进层目录的是 `inc/app.h`：它是 `Core/Src/main.c`（生成代码）包含的 C 入口桥接，必须留在 `inc` 根下。
+- 参数只有两份：`inc/config/car_config.hpp`（底盘与摇杆）、`inc/config/arm_config.hpp`（机械臂）。
 
-**已知的两处跨层调用**（迁移只搬代码，没有改接口，下一版想更干净可以从这里切）：`Drivers/src/ps2.cpp` 直接调 `decode_ps2_frame()`（Driver → Device 协议解析），`Drivers/src/outputs.cpp` 直接调 `motor_update()`（Driver → Device 闭环）。彻底分开的做法分别是「驱动只回原始字节、由 Device 解码」和「闭环调度移出 `apply_motors`」。
+**已知的两处跨层调用**（迁移只搬代码，没有改接口，下一版想更干净可以从这里切）：`src/driver/ps2.cpp` 直接调 `decode_ps2_frame()`（Driver → Device 协议解析），`src/driver/outputs.cpp` 直接调 `motor_update()`（Driver → Device 闭环）。彻底分开的做法分别是「驱动只回原始字节、由 Device 解码」和「闭环调度移出 `apply_motors`」。
 
 ## 阅读顺序
 
-1. `src/main.cpp`：主循环，按键去抖与急停，采集输入、计算指令、执行输出、定时报告。
-2. `Drivers/src/ps2.cpp`：PS2 接收器的 SPI 通信、模拟模式配置、轮询及超时；`src/ps2_protocol.cpp` 负责唯一一份报文解码。
-3. `src/mode_control.cpp`：手柄操作逻辑，两个模式入口、按键边沿位图、`L3+R3` 急停组合、预设绑定表。
-4. `src/arm_pose.cpp`：机械臂编排层，预设/笛卡尔入口 → 解算 → 关节层，以及反馈聚合。
-5. `src/arm_kinematics.cpp`（平面 2R 逆解/正解）与 `src/arm_joint.cpp`（四路行程状态机）：纯计算，不碰 HAL，可在 PC 上单测。
-6. `src/motor.cpp`（速度闭环）+ `src/pid.cpp`（算法）+ `Drivers/src/encoder.cpp`（编码器计数）：一个电机被拆在三层里的示例。
-7. `src/drive_control.cpp`：底盘麦轮混合与按键平移/自转；`Drivers/src/outputs.cpp`：方向脚、PWM、换向等待与舵机脉宽。
-8. 参数：`inc/car_config.hpp`（轮位、极性、麦轮布局、摇杆死区、自转占空比）与 `inc/arm_config.hpp`（几何、限位、工作区、速度、8 条预设的唯一真值）。
+1. `src/task/main.cpp`：主循环，按键去抖与急停，采集输入、计算指令、执行输出、定时报告。
+2. `src/driver/ps2.cpp`：PS2 接收器的 SPI 通信、模拟模式配置、轮询及超时；`src/device/ps2_protocol.cpp` 负责唯一一份报文解码。
+3. `src/task/mode_control.cpp`：手柄操作逻辑，两个模式入口、按键边沿位图、`L3+R3` 急停组合、预设绑定表。
+4. `src/device/arm_pose.cpp`：机械臂编排层，预设/笛卡尔入口 → 解算 → 关节层，以及反馈聚合。
+5. `src/algorithm/arm_kinematics.cpp`（平面 2R 逆解/正解）与 `src/device/arm_joint.cpp`（四路行程状态机）。
+6. `src/device/motor.cpp`（速度闭环）+ `src/algorithm/pid.cpp`（算法）+ `src/driver/encoder.cpp`（编码器计数）：一个电机被拆在三层里的示例。
+7. `src/device/drive_control.cpp`：底盘麦轮混合与按键平移/自转；`src/driver/outputs.cpp`：方向脚、PWM、换向等待与舵机脉宽。
+8. 参数：`inc/config/car_config.hpp`（轮位、极性、麦轮布局、摇杆死区、自转占空比）与 `inc/config/arm_config.hpp`（几何、限位、工作区、速度、8 条预设的唯一真值）。
 
 数据按 `ps2_update → ps2_read → mode_control_update → apply_motors / apply_servos` 流动。PS2 报文只解码一次，程序中的按键位统一为 1 表示按下。调试统计不参与控制决策。
 
@@ -57,7 +59,7 @@ cmake --build --preset Release
 
 ## 操作与接线
 
-采用 O 型麦轮布局。M1 左前、M2 右前、M3 右后、M4 左后，M1/M2 反向。轮位和方向在 `inc/car_config.hpp` 中配置。
+采用 O 型麦轮布局。M1 左前、M2 右前、M3 右后、M4 左后，M1/M2 反向。轮位和方向在 `inc/config/car_config.hpp` 中配置。
 
 **模式**：`Start` 进模式一（底盘，上电默认），`Select` 进模式二（机械臂）。两个键都是直接入口、各自幂等，不是 toggle；急停锁定时不响应。
 
@@ -110,7 +112,7 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 
 ## 机械臂标定
 
-**没有单关节 jog 了**：轴 0/1 只能由笛卡尔解算驱动，手动入口只剩夹爪(2) 和腕(3)。所有数值在 `inc/arm_config.hpp`（`kGeom` / `kJointLimits` / `kWorkspace` / `kMotion` / `kPoses`），改完重烧。
+**没有单关节 jog 了**：轴 0/1 只能由笛卡尔解算驱动，手动入口只剩夹爪(2) 和腕(3)。所有数值在 `inc/config/arm_config.hpp`（`kGeom` / `kJointLimits` / `kWorkspace` / `kMotion` / `kPoses`），改完重烧。
 
 顺序不能乱：
 
@@ -122,6 +124,6 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 6. **填预设**：笛卡尔摆到 8 个工位，抄串口 `xy=` 与 `S1..S4` → `kPoses[8]`。
 7. **上电全表校验**：不碰手柄，串口应打 `poses=0x00`。
 
-`ARM_BRINGUP` 版把四路直接设成 `src/arm_pose.cpp` 里的 `kBringupPercent[4]`，跳过 IK、工作区、角度限位，**没有任何软件限位**，必须人工盯住、听到堵转立刻拔电。它不接任何手柄键，标完去掉宏重烧，否则等于把全部限位关掉上赛场。
+`ARM_BRINGUP` 版把四路直接设成 `src/device/arm_pose.cpp` 里的 `kBringupPercent[4]`，跳过 IK、工作区、角度限位，**没有任何软件限位**，必须人工盯住、听到堵转立刻拔电。它不接任何手柄键，标完去掉宏重烧，否则等于把全部限位关掉上赛场。
 
-限位只存角度，百分比由 `percent_of()` 在编译期派生（`inc/arm_config.hpp`），不要再手填一套百分比限位。
+限位只存角度，百分比由 `percent_of()` 在编译期派生（`inc/config/arm_config.hpp`），不要再手填一套百分比限位。

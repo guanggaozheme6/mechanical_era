@@ -1,4 +1,4 @@
-#include "drive_control.hpp"
+#include "device/drive_control.hpp"
 
 namespace {
 int magnitude(int value) { return value < 0 ? -value : value; }

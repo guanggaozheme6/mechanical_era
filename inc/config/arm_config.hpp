@@ -12,8 +12,8 @@
 //  本文件只装数值 + 编译期自检，不放任何逻辑。
 // ============================================================================
 
-#include "arm_joint.hpp"
-#include "arm_kinematics.hpp"
+#include "device/arm_joint.hpp"
+#include "algorithm/arm_kinematics.hpp"
 
 namespace arm_config {
 

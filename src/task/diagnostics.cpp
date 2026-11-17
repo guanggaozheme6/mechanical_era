@@ -1,6 +1,6 @@
-#include "diagnostics.hpp"
-#include "motor.hpp"
-#include "ps2.hpp"
+#include "task/diagnostics.hpp"
+#include "device/motor.hpp"
+#include "driver/ps2.hpp"
 #include <cstdio>
 
 extern "C" UART_HandleTypeDef huart3;

@@ -1,9 +1,9 @@
 #pragma once
 
-#include "arm_control.hpp"
-#include "arm_pose.hpp"
-#include "drive_control.hpp"
-#include "ps2_protocol.hpp"
+#include "device/arm_control.hpp"
+#include "device/arm_pose.hpp"
+#include "device/drive_control.hpp"
+#include "device/ps2_protocol.hpp"
 #include <cstdint>
 
 // 手柄操作模式。两个直接入口（Start = 一、Select = 二），不是 toggle。

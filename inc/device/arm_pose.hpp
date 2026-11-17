@@ -1,6 +1,6 @@
 #pragma once
 
-#include "arm_control.hpp"
+#include "device/arm_control.hpp"
 #include <cstdint>
 
 // ============================================================================

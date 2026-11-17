@@ -1,5 +1,5 @@
-#include "arm_control.hpp"
-#include "car_config.hpp"
+#include "device/arm_control.hpp"
+#include "config/car_config.hpp"
 
 int arm_axis_percent(uint8_t axis, bool invert) {
     const int delta = static_cast<int>(axis) - 128;

@@ -1,8 +1,8 @@
 #include "app.h"
-#include "diagnostics.hpp"
-#include "mode_control.hpp"
-#include "outputs.hpp"
-#include "ps2.hpp"
+#include "task/diagnostics.hpp"
+#include "task/mode_control.hpp"
+#include "driver/outputs.hpp"
+#include "driver/ps2.hpp"
 
 extern "C" SPI_HandleTypeDef hspi2;
 

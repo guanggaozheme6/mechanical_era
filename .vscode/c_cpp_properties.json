@@ -11,7 +11,6 @@
             "compileCommands": "${workspaceFolder}/build/Debug/compile_commands.json",
             "includePath": [
                 "${workspaceFolder}/inc",
-                "${workspaceFolder}/Drivers/inc",
                 "${workspaceFolder}/Core/Inc",
                 "${workspaceFolder}/Drivers/STM32F1xx_HAL_Driver/Inc",
                 "${workspaceFolder}/Drivers/STM32F1xx_HAL_Driver/Inc/Legacy",

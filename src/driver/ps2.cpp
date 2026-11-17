@@ -1,4 +1,4 @@
-#include "ps2.hpp"
+#include "driver/ps2.hpp"
 #include <algorithm>
 
 Ps2Diagnostics ps2_debug;

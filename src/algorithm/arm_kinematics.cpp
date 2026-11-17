@@ -1,4 +1,4 @@
-#include "arm_kinematics.hpp"
+#include "algorithm/arm_kinematics.hpp"
 
 #include <cmath>
 

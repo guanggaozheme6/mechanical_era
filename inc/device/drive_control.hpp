@@ -1,7 +1,7 @@
 #pragma once
 
-#include "ps2_protocol.hpp"
-#include "car_config.hpp"
+#include "device/ps2_protocol.hpp"
+#include "config/car_config.hpp"
 
 struct DriveCommand {
     // 按实际电机 M1～M4 排列，已包含轮位映射和方向校正。

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "arm_control.hpp"
-#include "arm_pose.hpp"
-#include "drive_control.hpp"
+#include "device/arm_control.hpp"
+#include "device/arm_pose.hpp"
+#include "device/drive_control.hpp"
 
 // arm_mode 只用于串口打 op=DRV/ARM（操作模式）。mode= 那个字段是 PS2 协议模式字，
 // 两者字段名必须分开，否则现场一定读错。

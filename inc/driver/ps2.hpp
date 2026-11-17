@@ -1,7 +1,7 @@
 #pragma once
 
 #include "main.h"
-#include "ps2_protocol.hpp"
+#include "device/ps2_protocol.hpp"
 
 // 单个接收器，由主循环调用；不在中断中读写。
 // 调试统计只用于观察，不作为控制逻辑的输入。

@@ -1,7 +1,7 @@
-#include "arm_pose.hpp"
-#include "arm_config.hpp"
-#include "arm_joint.hpp"
-#include "arm_kinematics.hpp"
+#include "device/arm_pose.hpp"
+#include "config/arm_config.hpp"
+#include "device/arm_joint.hpp"
+#include "algorithm/arm_kinematics.hpp"
 
 #include <cmath>
 

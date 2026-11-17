@@ -1,6 +1,6 @@
 #pragma once
 
-#include "drive_control.hpp"
+#include "device/drive_control.hpp"
 #include <cstdint>
 
 // ============================================================================

@@ -1,6 +1,6 @@
-#include "outputs.hpp"
+#include "driver/outputs.hpp"
 #include "main.h"
-#include "motor.hpp"
+#include "device/motor.hpp"
 #include <algorithm>
 
 extern "C" TIM_HandleTypeDef htim1;

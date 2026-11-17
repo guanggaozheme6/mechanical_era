@@ -15,26 +15,26 @@ enable_language(ASM)
 add_executable(${PROJECT_NAME})
 add_subdirectory(cmake/stm32cubemx)
 target_sources(${PROJECT_NAME} PRIVATE
-    # Task 层：业务编排
-    src/main.cpp
-    src/mode_control.cpp
-    src/diagnostics.cpp
-    # Device 层：协议解析 / 设备状态与闭环接口
-    src/ps2_protocol.cpp
-    src/drive_control.cpp
-    src/motor.cpp
-    src/arm_joint.cpp
-    src/arm_pose.cpp
-    src/arm_control.cpp
-    # Algorithm 层：纯计算
-    src/pid.cpp
-    src/arm_kinematics.cpp
-    # Driver 层：寄存器/PWM/SPI 时序
-    Drivers/src/ps2.cpp
-    Drivers/src/outputs.cpp
-    Drivers/src/encoder.cpp
+    # Task 层：业务编排 / 控制循环 / 模式状态机
+    src/task/main.cpp
+    src/task/mode_control.cpp
+    src/task/diagnostics.cpp
+    # Device 层：协议解析 / 设备状态机 / 闭环接口
+    src/device/ps2_protocol.cpp
+    src/device/drive_control.cpp
+    src/device/arm_control.cpp
+    src/device/motor.cpp
+    src/device/arm_joint.cpp
+    src/device/arm_pose.cpp
+    # Algorithm 层：纯计算（IK/FK、PID）
+    src/algorithm/arm_kinematics.cpp
+    src/algorithm/pid.cpp
+    # Driver 层：寄存器 / PWM / SPI 时序
+    src/driver/ps2.cpp
+    src/driver/outputs.cpp
+    src/driver/encoder.cpp
 )
-target_include_directories(${PROJECT_NAME} PRIVATE inc Drivers/inc)
+target_include_directories(${PROJECT_NAME} PRIVATE inc)
 target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Werror>)
 # 某些工具链错误地将 ob 加入 C 隐式链接库。
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
