@@ -1,0 +1,2354 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>机械纪元 · 机械臂二维仿真</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#101823; --line:#1f2b3a; --text:#dbe6f3; --dim:#7d8fa6;
+    --band:#22d3ee; --arm:#e8eef7; --tool:#f5a524; --ws:#a78bfa;
+    --ok:#5bd98a; --warn:#f5a524; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:radial-gradient(1200px 600px at 20% -10%,#132033 0%,var(--bg) 60%);
+    color:var(--text);font:13.5px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{padding:14px 22px 2px;display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+  h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.3px}
+  .tag{font-size:11.5px;color:var(--dim);border:1px solid var(--line);border-radius:20px;padding:1px 9px}
+  header .sub{color:var(--dim);font-size:12px;width:100%}
+  header .sub code{color:#a9bdd6;background:#131d2a;padding:1px 5px;border-radius:4px}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 408px;gap:16px;padding:8px 20px 28px;align-items:start}
+  @media (max-width:1180px){main{grid-template-columns:1fr}}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px 12px;min-width:0;
+         box-shadow:0 12px 30px -18px #000}
+  .toolbar{display:flex;flex-wrap:wrap;gap:13px;align-items:center;font-size:12px;color:var(--dim);margin-bottom:8px}
+  .toolbar label{display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none;white-space:nowrap}
+  .toolbar input{accent-color:var(--band);margin:0}
+  .toolbar .grow{flex:1}
+  .toolbar .meta{font-variant-numeric:tabular-nums;color:#93a6bd}
+  canvas{width:100%;display:block;border-radius:9px;background:#070b11;cursor:crosshair;touch-action:none}
+  .readout{margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:8px}
+  .kv{background:#0b1220;border:1px solid #1a2534;border-radius:8px;padding:7px 9px;font-size:11px;
+      font-variant-numeric:tabular-nums;font-family:ui-monospace,Consolas,monospace;color:#93a6bd;line-height:1.62}
+  .kvt{color:#6f8299;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;margin-bottom:2px}
+  .kv b{color:#dbe6f3;font-weight:600}
+  .kv .k{color:#6f8299;display:inline-block;min-width:74px}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;
+         position:sticky;top:10px;max-height:calc(100vh - 24px);overflow:auto;
+         box-shadow:0 12px 30px -18px #000}
+  .panel::-webkit-scrollbar{width:9px}
+  .panel::-webkit-scrollbar-thumb{background:#22303f;border-radius:6px}
+  .derived{background:#0b1220;border:1px solid #1a2534;border-radius:8px;padding:8px 10px;font-size:11.5px;
+           font-variant-numeric:tabular-nums;font-family:ui-monospace,Consolas,monospace;color:#93a6bd;line-height:1.75}
+  .derived b{color:#dbe6f3}
+  .checks{margin:8px 0 2px;font-size:11px;font-family:ui-monospace,Consolas,monospace}
+  .checks div{display:flex;gap:6px;line-height:1.65;color:#8fa3ba}
+  .checks .ok{color:var(--ok)} .checks .no{color:var(--bad)} .checks .warn{color:var(--warn)}
+  .sec{border-top:1px solid #16202c;margin-top:10px;padding-top:9px}
+  .sec h3{font-size:11.5px;color:#8ea3bb;font-weight:600;letter-spacing:.5px;margin:0 0 6px;text-transform:uppercase}
+  .field{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:2px 0}
+  .flabel{flex:1 1 auto;color:#a9bdd6;font-size:12px;min-width:96px}
+  .field input[type=number]{width:82px;background:#0b1220;border:1px solid #22303f;color:var(--text);
+    border-radius:5px;padding:2px 5px;font:11.5px ui-monospace,Consolas,monospace;
+    font-variant-numeric:tabular-nums;text-align:right}
+  .field input[type=number]:focus{outline:none;border-color:var(--band)}
+  .funit{width:44px;color:#6f8299;font-size:11px}
+  .field .slide{flex:0 0 100%;display:flex;align-items:center;gap:6px}
+  .field input[type=range]{flex:1;accent-color:var(--band);height:4px}
+  .tgt{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:5px 8px;align-items:center;margin-bottom:6px}
+  .tgt .flabel{min-width:0}
+  .tgt input[type=number]{width:100%;max-width:120px;background:#0b1220;border:1px solid #22303f;color:var(--text);
+    border-radius:5px;padding:2px 5px;font:11.5px ui-monospace,Consolas,monospace;
+    font-variant-numeric:tabular-nums;text-align:right}
+  .tgt input[type=number]:focus{outline:none;border-color:var(--band)}
+  button{background:#16222f;border:1px solid #2a3a4d;color:var(--text);border-radius:6px;padding:4px 9px;
+    font:12px "Segoe UI","Microsoft YaHei",sans-serif;cursor:pointer}
+  button:hover{background:#1d2c3c;border-color:#3a5064}
+  button.pri{background:#0e3a44;border-color:#1d6b78;color:#a8ecf7}
+  button.pri:hover{background:#124a56}
+  button.danger{background:#3a1a1f;border-color:#6b2029;color:#ffb4b4}
+  .btnrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .sliderRow{display:flex;align-items:center;gap:7px;padding:1px 0;font-size:12px;color:#a9bdd6}
+  .sliderRow label{width:52px;flex:0 0 52px}
+  .sliderRow input[type=range]{flex:1;accent-color:var(--band);height:4px}
+  .sliderRow .val{width:118px;text-align:right;font:11px ui-monospace,Consolas,monospace;color:#93a6bd;
+    font-variant-numeric:tabular-nums}
+  .poseRow{border:1px solid #1a2534;border-radius:7px;padding:4px 6px;margin-bottom:5px;cursor:pointer;
+    background:#0b1220}
+  .poseRow.sel{border-color:#1d6b78;background:#0d1c26}
+  .poseHead{display:flex;align-items:center;gap:7px;font-size:11.5px}
+  .poseName{color:#dbe6f3;font-weight:600;min-width:96px}
+  .poseInfo{color:#6f8299;font:10.5px ui-monospace,Consolas,monospace;flex:1}
+  .badge{font-size:10px;border-radius:10px;padding:0 6px;border:1px solid}
+  .badge.ok{color:var(--ok);border-color:#2b6b45;background:#0d2a1c}
+  .badge.warn{color:var(--warn);border-color:#6b5120;background:#2a200c}
+  .badge.bad{color:var(--bad);border-color:#6b2029;background:#2a0f12}
+  .poseBody{display:flex;gap:5px;align-items:center;margin-top:2px}
+  .poseBody label{color:#6f8299;font-size:10.5px}
+  .poseBody input{width:100%;min-width:0;background:#101823;border:1px solid #22303f;color:var(--text);
+    border-radius:4px;padding:1px 4px;font:11px ui-monospace,Consolas,monospace;text-align:right}
+  .poseBody input:focus{outline:none;border-color:var(--band)}
+  .leg{display:flex;flex-wrap:wrap;gap:11px;color:var(--dim);font-size:11px;padding:2px 2px 0}
+  .leg i{display:inline-block;width:16px;height:0;border-top-width:3px;border-top-style:solid;
+    vertical-align:middle;margin-right:5px;border-radius:2px}
+  .leg .sw{width:11px;height:11px;border:0;display:inline-block;margin-right:5px;border-radius:3px;vertical-align:-1px}
+  .cuberow{display:flex;gap:12px;align-items:flex-start;margin-top:10px}
+  #cv3d{width:100%;height:172px;display:block;border-radius:8px;background:#0b1220;
+    border:1px solid #1a2534;margin:2px 0 6px}
+  .cat{border-top:1px solid #16202c;margin-top:8px;padding-top:2px}
+  .cat summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;padding:4px 0;
+    font-size:11.5px;color:#8ea3bb;font-weight:600;letter-spacing:.5px;user-select:none}
+  .cat summary::-webkit-details-marker{display:none}
+  .cat summary::before{content:"▸";color:#4a5d72;font-size:10px;line-height:1}
+  .cat[open] summary::before{content:"▾"}
+  .cat summary:hover{color:#b6c8dc}
+  .catmeta{margin-left:auto;color:#59697d;font-weight:400;font-size:10.5px;letter-spacing:0;text-align:right}
+  .catbody{padding:2px 0 6px}
+  .subhead{margin:6px 0 2px;font-size:10.5px;color:#59697d;letter-spacing:.4px}
+  .subhead:first-child{margin-top:0}
+  .cubeinfo{flex:1 1 auto;min-width:0;font:11.5px/1.8 ui-monospace,Consolas,monospace;color:#93a6bd;
+    font-variant-numeric:tabular-nums}
+  .cubeinfo b{color:#dbe6f3}
+  .facelegend{display:flex;flex-wrap:wrap;gap:4px 10px;margin:3px 0}
+  .facelegend span{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#8fa3ba}
+  .facelegend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  @media (max-width:640px){.cuberow{flex-wrap:wrap}#cv3d{flex:0 0 100%;width:100%}}
+  .hint{color:#6f8299;font-size:11px;margin-top:4px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>机械臂二维仿真</h1>
+  <span class="tag">侧视 · 原点 = 臂底座中心</span>
+  <span class="tag">算法 = arm_kinematics.cpp</span>
+  <div class="sub">
+    底盘 <code>L = 265.08（259.08+6）</code>，底座中心距前端 <code>72.46</code>，臂底座离地 <code>77（37+40）</code>；
+    大臂 <code>76.00</code>，腕点小臂 <code>40.08</code>，腕点→夹爪末端 <code>128.35</code>，
+    真实小臂 <code>= 40.08 + 128.35 = 168.43</code>；末端 <code>46</code> 是夹爪，夹取点可在其中任意位置。
+    点/拖画布任意点即按固件逻辑反解。
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="toolbar">
+      <label><input type="checkbox" id="optBand" checked> 可达域</label>
+      <label><input type="checkbox" id="optGrid" checked> 网格</label>
+      <label><input type="checkbox" id="optWs" checked> 工作区</label>
+      <label><input type="checkbox" id="optDims" checked> 尺寸</label>
+
+      <span class="grow"></span>
+      <span class="meta" id="bandMeta">…</span>
+    </div>
+    <canvas id="cv"></canvas>
+    <div class="leg">
+      <span><span class="sw" style="background:rgba(34,211,238,.45)"></span>固件能夹住（沿 46 mm 夹爪线有精确解、选支也过）</span>
+      <span><span class="sw" style="background:rgba(245,165,36,.35)"></span>只有另一支能到（θ2 符号与固件选支相反，固件解不出）</span>
+      <span><span class="sw" style="background:rgba(255,107,107,.22)"></span>干涉区（臂会撞底盘/地面）不画 = 不可达</span>
+      <span><i style="border-color:#a78bfa;border-top-style:dashed"></i>工作区（软边界 kWorkspace）</span>
+      <span><i style="border-color:#e8eef7"></i>大臂 L1</span>
+      <span><i style="border-color:#22d3ee"></i>小臂（到夹爪末端）</span>
+    </div>
+    <div class="readout" id="readout"></div>
+  </section>
+
+  <aside class="panel">
+    <div class="derived" id="derived"></div>
+    <div class="checks" id="checks"></div>
+
+    <details class="cat" open>
+      <summary>操作 · 取点与手动关节<span class="catmeta">点画布 / 拖滑块</span></summary>
+      <div class="catbody">
+        <div class="tgt">
+          <span class="flabel">目标 x</span><input type="number" id="tx" step="0.1"><span class="funit">mm</span>
+          <span class="flabel">目标 y</span><input type="number" id="ty" step="0.1"><span class="funit">mm</span>
+        </div>
+        <div class="btnrow" style="margin:0 0 6px">
+          <button id="btnGo">按目标解算</button>
+          <button id="btnZero">上电中位</button>
+          <button id="btnClear">清目标</button>
+        </div>
+        <div class="sliderRow"><label>S1 大臂</label><input type="range" id="r1" min="-100" max="100" step="0.5"><span class="val" id="v1"></span></div>
+        <div class="sliderRow"><label>S2 小臂</label><input type="range" id="r2" min="-100" max="100" step="0.5"><span class="val" id="v2"></span></div>
+        <div class="sliderRow"><label>S3 夹爪</label><input type="range" id="r3" min="-100" max="100" step="1"><span class="val" id="v3"></span></div>
+        <div class="sliderRow"><label>S4 腕</label><input type="range" id="r4" min="-100" max="100" step="1"><span class="val" id="v4"></span></div>
+        <div class="sliderRow"><label>夹取点</label><input type="range" id="r5" min="0" max="46" step="0.5"><span class="val" id="v5"></span></div>
+      </div>
+    </details>
+
+    <details class="cat" open>
+      <summary>物块 · 夹取与物理<span class="catmeta" id="metaCube"></span></summary>
+      <div class="catbody">
+        <canvas id="cv3d"></canvas>
+        <div class="cubeinfo" id="cubeinfo"></div>
+        <div class="btnrow">
+          <button id="btnGrab">夹取物块</button>
+          <button id="btnRelease">松开 / 掉落</button>
+          <button id="btnResetCube">回地面</button>
+        </div>
+        <div class="hint" id="cubeHint"></div>
+        <div id="grp-cube"></div>
+      </div>
+    </details>
+
+    <details class="cat" open>
+      <summary>几何 · 连杆与底盘<span class="catmeta" id="metaGeom"></span></summary>
+      <div class="catbody" id="grp-geom"></div>
+    </details>
+
+    <details class="cat">
+      <summary>标定 · 零点 / 比例 / 限位<span class="catmeta">TBD-2/3/4</span></summary>
+      <div class="catbody" id="grp-cal"></div>
+    </details>
+
+    <details class="cat">
+      <summary>工作区 / 手感<span class="catmeta" id="metaWs"></span></summary>
+      <div class="catbody" id="grp-ws"></div>
+    </details>
+
+    <details class="cat">
+      <summary>预设姿态<span class="catmeta" id="metaPose">kPoses</span></summary>
+      <div class="catbody">
+        <div id="poses"></div>
+        <div class="btnrow">
+          <button id="btnGen">按可达域生成占位</button>
+          <button id="btnFw">载入固件现值</button>
+          <button id="btnSavePose">末端点存为选中条</button>
+        </div>
+        <div class="hint" id="poseHint"></div>
+      </div>
+    </details>
+
+    <details class="cat">
+      <summary>导入 / 导出<span class="catmeta">JSON / hpp</span></summary>
+      <div class="catbody">
+        <div class="btnrow">
+          <button class="pri" id="btnJson">导出 JSON</button>
+          <button class="pri" id="btnHpp">导出 hpp 片段</button>
+          <button id="btnImport">导入 JSON</button>
+          <button class="danger" id="btnReset">重置全部</button>
+          <input type="file" id="fileIn" accept=".json,application/json" hidden>
+        </div>
+        <div class="hint">hpp 片段按 <code>Include/arm_config.hpp</code> 的写法给出 kGeom / kWorkspace / kMotion / kPoses，可直接对照粘贴。</div>
+      </div>
+    </details>
+  </aside>
+</main>
+
+<script src="cube3d.js"></script>
+<script src="arm_core.js"></script>
+<script>
+(function () {
+"use strict";
+
+const Core = window.ArmCore;
+const RAD = Math.PI / 180;
+const DEG = 180 / Math.PI;
+const $ = (s) => document.querySelector(s);
+const clone = (o) => JSON.parse(JSON.stringify(o));
+
+/* ======================= 默认参数（对应 Include/arm_config.hpp） ======================= */
+const DEFAULT_CFG = {
+  chassis: {
+    lenMm: 265.08,      // 259.08 + 6
+    frontMm: 72.46,     // 底座中心 → 底盘前端
+    clearanceMm: 37,    // 底盘下沿离地
+    bodyMm: 40          // 底盘本体厚度（合计 77）
+  },
+  geom: {
+    upperMm: 76.0,
+    foreMm: 40.08,
+    toolMm: 128.35,
+    jawMm: 46.0,          // 末端 46 mm 是夹爪本体：夹取点可落在这段上任意位置
+    elbowSign: 1,
+    shoulder: { zeroDeg: 90.0, degPerPercent: 0.9, minDeg: 0.0, maxDeg: 180.0 },
+    elbow: { zeroDeg: 45.0, degPerPercent: 0.9, minDeg: -45.0, maxDeg: 135.0 }
+  },
+  ws: { xMin: 0, xMax: 0, yMin: 0, yMax: 0 },   // 首帧按可达域拟合
+  motion: {
+    cartSpeed: 50, slew: 300, settle: 1, sag: 0, maxElapsedMs: 100,
+    jog: [150, 150, 200, 150]
+  },
+  state: { p1: -66, p2: -86, p3: 0, p4: 0, graspMm: 23.0 },
+  cube: {
+    sizeMm: 20.0,      // 20 mm 立方体
+    massG: 10.0,
+    x: 200.0, y: -67.0, // 初始：地面上、底盘前端外
+    held: false,
+    fallV: 0,
+    yawDeg: 0, rollDeg: 0
+  },
+  phys: {
+    gravity: 9.80665,
+    arm1G: 40.0,       // 大臂段质量
+    arm2G: 80.0,       // 小臂 + 夹爪质量
+    tau1KgCm: 1.8,     // SG90 额定扭矩
+    tau2KgCm: 1.8,
+    mu: 0.6,           // 夹爪-物块摩擦系数
+    jawForceN: 3.0,    // 夹爪满行程夹紧力
+    maxOpenMm: 40.0    // 夹爪最大开口
+  },
+  poses: []
+};
+
+const FW_POSES = [
+  { key: "Home",    x: 105.2, y: 38.3, grip: 0,   wrist: 0 },
+  { key: "Ready",   x: 77.8,  y: 77.8, grip: -20, wrist: 0 },
+  { key: "Reach",   x: 115.5, y: 0.0,  grip: -40, wrist: 0 },
+  { key: "Retract", x: 106.6, y: 22.7, grip: 0,   wrist: 0 },
+  { key: "Lift",    x: 73.9,  y: 82.1, grip: -40, wrist: 0 },
+  { key: "Carry",   x: 97.9,  y: 56.5, grip: -40, wrist: 0 },
+  { key: "Place",   x: 113.4, y: 15.9, grip: -30, wrist: 0 },
+  { key: "Drop",    x: 85.9,  y: 67.1, grip: 20,  wrist: 0 }
+];
+
+/* ======================= 状态 ======================= */
+let CFG = clone(DEFAULT_CFG);
+let target = null;
+let sel = 0;
+let view = null;
+let band = { canvas: null, count: 0, area: 0 };
+let cvs = null;
+let ctx = null;
+let dpr = 1;
+let rafBand = 0;
+const bindings = [];
+
+/* ======================= 工具 ======================= */
+function getPath(o, p) {
+  return p.split(".").reduce((acc, k) => (acc == null ? acc : acc[k]), o);
+}
+function setPath(o, p, v) {
+  const ks = p.split(".");
+  const last = ks.pop();
+  const host = ks.reduce((acc, k) => acc[k], o);
+  host[last] = v;
+}
+function fmt(v, n) {
+  if (typeof v !== "number" || !isFinite(v)) { return "—"; }
+  return v.toFixed(n == null ? 2 : n);
+}
+function r2(v) { return Math.round(v * 100) / 100; }
+
+function download(name, text, mime) {
+  const blob = new Blob([text], { type: mime || "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+/* ======================= 视图 ======================= */
+function worldBounds() {
+  const c = CFG.chassis;
+  const rMax = Core.maxReach(CFG.geom);
+  const rear = c.frontMm - c.lenMm;
+  const ground = -(c.clearanceMm + c.bodyMm);
+  return {
+    x0: Math.min(rear - 24, -30),
+    x1: Math.max(c.frontMm + 70, rMax + 24),
+    y0: ground - 24,
+    y1: Math.max(rMax + 28, 150),
+    ground: ground,
+    rear: rear
+  };
+}
+
+function layout() {
+  const host = cvs.parentElement;
+  const cssW = Math.max(320, host.clientWidth || 900);
+  const b = worldBounds();
+  const maxH = Math.max(340, Math.min(640, Math.round(window.innerHeight * 0.62)));
+  const S = Math.min(cssW / (b.x1 - b.x0), maxH / (b.y1 - b.y0));
+  const W = cssW;
+  const H = Math.round((b.y1 - b.y0) * S);
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const nw = Math.round(W * dpr);
+  const nh = Math.round(H * dpr);
+  if (cvs.width !== nw || cvs.height !== nh) {
+    cvs.width = nw;
+    cvs.height = nh;
+  }
+  cvs.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  view = Object.assign({}, b, { S: S, W: W, H: H, ox: (W - (b.x1 - b.x0) * S) / 2 });
+}
+
+function P(x, y) {
+  return { x: view.ox + (x - view.x0) * view.S, y: (view.y1 - y) * view.S };
+}
+function toWorld(clientX, clientY) {
+  const rect = cvs.getBoundingClientRect();
+  const px = clientX - rect.left;
+  const py = clientY - rect.top;
+  return { x: view.x0 + (px - view.ox) / view.S, y: view.y1 - py / view.S };
+}
+
+/* ======================= 夹取范围（沿 46 mm 夹爪线扫掠） ======================= */
+let envCache = { key: "", canvas: null, nHit: 0, nPhys: 0, nBad: 0 };
+
+function buildBand() {
+  const v = view;
+  const g = CFG.geom;
+  const c = CFG.chassis;
+  const step = 2;
+  const iw = Math.max(1, Math.ceil(v.W / step));
+  const ih = Math.max(1, Math.ceil(v.H / step));
+  const key = [g.upperMm, g.foreMm, g.toolMm, g.jawMm, g.elbowSign,
+    g.shoulder.minDeg, g.shoulder.maxDeg, g.elbow.minDeg, g.elbow.maxDeg,
+    c.lenMm, c.frontMm, c.clearanceMm, c.bodyMm,
+    v.S, v.ox, v.x0, v.y1, iw, ih].join("|");
+
+  if (envCache.key === key && envCache.canvas) {
+    band = { canvas: envCache.canvas, nHit: envCache.nHit, nPhys: envCache.nPhys, nBad: envCache.nBad };
+    renderBandMeta();
+    return;
+  }
+
+  // 0 = 不可达；1 = 固件能夹住（选支通过）；2 = 只有另一支能到（固件不选）；
+  // 3 = 只有把臂穿过底盘/地面才够得到
+  const cls = new Uint8Array(iw * ih);
+  const rank = { 0: 0, 3: 1, 2: 2, 1: 3 };
+
+  const fore = Core.foreLength(g);
+  const jaw = Math.min(Math.max(g.jawMm, 0), Math.max(fore - 1, 0));
+  const l1 = g.upperMm;
+  const groundY0 = v.ground;
+  const rearX0 = c.frontMm - c.lenMm;
+  const frontX0 = c.frontMm;
+  const toI = function (x) { return (v.ox + (x - v.x0) * v.S) / step - 0.5; };
+  const toJ = function (y) { return ((v.y1 - y) * v.S) / step - 0.5; };
+
+  // 大臂 + 小臂 + 夹爪 整条链撞进底盘/地面 → 这条姿态直接作废（不是"可达但撞"）
+  const hitBody = function (ex, ey, bx, by) {
+    for (let t = 0; t <= 6; t++) {
+      const x = ex * t / 6;
+      const y = ey * t / 6;
+      if (x * x + y * y < R0_MM * R0_MM) { continue; }
+      if (y < groundY0 || (x >= rearX0 && x <= frontX0 && y < CLA_MM)) { return true; }
+    }
+    for (let t = 0; t <= 10; t++) {
+      const x = ex + (bx - ex) * t / 10;
+      const y = ey + (by - ey) * t / 10;
+      if (x * x + y * y < R0_MM * R0_MM) { continue; }
+      if (y < groundY0 || (x >= rearX0 && x <= frontX0 && y < CLA_MM)) { return true; }
+    }
+    return false;
+  };
+
+  // 扫掠：每个 (θ1, θ2) 连一条夹爪线，线上一格一格格标
+  const d1Step = 1;
+  const d2Step = 0.5;
+  for (let d1 = g.shoulder.minDeg; d1 <= g.shoulder.maxDeg + 1e-9; d1 += d1Step) {
+    const a1 = d1 * RAD;
+    const ex = l1 * Math.cos(a1);
+    const ey = l1 * Math.sin(a1);
+    for (let d2 = g.elbow.minDeg; d2 <= g.elbow.maxDeg + 1e-9; d2 += d2Step) {
+      const sum = (d1 + d2) * RAD;
+      const ux = Math.cos(sum);
+      const uy = Math.sin(sum);
+      const ax = ex + (fore - jaw) * ux;
+      const ay = ey + (fore - jaw) * uy;
+      const bx = ex + fore * ux;
+      const by = ey + fore * uy;
+      const isBlocked = hitBody(ex, ey, bx, by);
+      const i0 = toI(ax);
+      const j0 = toJ(ay);
+      const i1 = toI(bx);
+      const j1 = toJ(by);
+      const n = Math.max(2, Math.ceil(Math.hypot(i1 - i0, j1 - j0)));
+      const sti = (i1 - i0) / n;
+      const stj = (j1 - j0) / n;
+      for (let t = 0; t <= n; t++) {
+        const i = Math.round(i0 + sti * t);
+        const j = Math.round(j0 + stj * t);
+        if (i < 0 || j < 0 || i >= iw || j >= ih) { continue; }
+        const k = j * iw + i;
+        if (cls[k] === 1) { continue; }
+        const wx = ax + (bx - ax) * (t / n);
+        // 固件的选支规则：side = tx>=0 ? -1 : +1 ⇒ θ2 的符号与 x 的符号相反
+        const fw = Math.abs(d2) < 1e-9 || (wx >= 0 ? d2 < 0 : d2 > 0);
+        const want = isBlocked ? 3 : (fw ? 1 : 2);
+        if (rank[want] > rank[cls[k]]) { cls[k] = want; }
+      }
+    }
+  }
+
+  // 补针孔（相邻扫掠线之间可能漏一格）：8 邻域里 ≥5 格有值就补上
+  for (let j = 1; j < ih - 1; j++) {
+    for (let i = 1; i < iw - 1; i++) {
+      const k = j * iw + i;
+      if (cls[k]) { continue; }
+      let cnt = 0;
+      let has1 = false;
+      let fallback = 3;
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          if (!di && !dj) { continue; }
+          const v = cls[k + dj * iw + di];
+          if (!v) { continue; }
+          cnt++;
+          if (v === 1) { has1 = true; } else if (v < fallback) { fallback = v; }
+        }
+      }
+      if (cnt >= 5) { cls[k] = has1 ? 1 : fallback; }
+    }
+  }
+
+  // 地面 / 底盘冲突
+  const groundY = v.ground;
+  const rearX = c.frontMm - c.lenMm;
+  const frontX = c.frontMm;
+  const bodyBottom = -c.bodyMm;
+  let nHit = 0;
+  let nPhys = 0;
+  let nBad = 0;
+  for (let j = 0; j < ih; j++) {
+    const wy = v.y1 - (j + 0.5) * step / v.S;
+    for (let i = 0; i < iw; i++) {
+      const k = j * iw + i;
+      if (!cls[k]) { continue; }
+      const wx = v.x0 + ((i + 0.5) * step - v.ox) / v.S;
+      if (cls[k] === 3 || wy < groundY ||
+          (wx >= rearX && wx <= frontX && wy < CLA_MM && (wx * wx + wy * wy) > R0_MM * R0_MM)) {
+        cls[k] = 3;
+        nBad++;
+      } else if (cls[k] === 1) {
+        nHit++;
+      } else {
+        nPhys++;
+      }
+    }
+  }
+
+  const off = document.createElement("canvas");
+  off.width = iw;
+  off.height = ih;
+  const octx = off.getContext("2d");
+  const img = octx.createImageData(iw, ih);
+  const d = img.data;
+  const COLORS = { 1: [34, 211, 238], 2: [245, 165, 36], 3: [255, 107, 107] };
+  const FILL = { 1: 54, 2: 26, 3: 14 };
+  const EDGE = { 1: 200, 2: 125, 3: 70 };
+  for (let j = 0; j < ih; j++) {
+    for (let i = 0; i < iw; i++) {
+      const k = j * iw + i;
+      const v0 = cls[k];
+      if (!v0 || v0 === 3) { continue; }   // 撞底盘的姿态 = 不可达，不画
+      const edge = i === 0 || j === 0 || i === iw - 1 || j === ih - 1 ||
+        cls[k - 1] !== v0 || cls[k + 1] !== v0 || cls[k - iw] !== v0 || cls[k + iw] !== v0;
+      const col = COLORS[v0];
+      const o = k * 4;
+      d[o] = col[0];
+      d[o + 1] = col[1];
+      d[o + 2] = col[2];
+      d[o + 3] = edge ? EDGE[v0] : FILL[v0];
+    }
+  }
+  octx.putImageData(img, 0, 0);
+
+  envCache = { key: key, canvas: off, nHit: nHit, nPhys: nPhys, nBad: nBad, cls: cls, iw: iw, ih: ih };
+  band = { canvas: off, nHit: nHit, nPhys: nPhys, nBad: nBad };
+  renderBandMeta();
+}
+
+function renderBandMeta() {
+  const cell = Math.pow(2 / view.S, 2);
+  $("#bandMeta").textContent =
+    "固件能夹住 ≈ " + Math.round(band.nHit * cell).toLocaleString() + " mm²" +
+    " · 只有另一支能到 ≈ " + Math.round(band.nPhys * cell).toLocaleString() + " mm²" +
+    " · 撞底盘/地面已排除 ≈ " + Math.round(band.nBad * cell).toLocaleString() + " mm²";
+}
+
+/* ======================= 派生量 ======================= */
+let derivedMemo = { key: "", val: null };
+
+function derived() {
+  const g = CFG.geom;
+  const c = CFG.chassis;
+  const key = [g.upperMm, g.foreMm, g.toolMm, g.jawMm, g.elbowSign,
+    g.shoulder.minDeg, g.shoulder.maxDeg, g.elbow.minDeg, g.elbow.maxDeg,
+    c.clearanceMm, c.bodyMm].join("|");
+  if (derivedMemo.key === key) {
+    return derivedMemo.val;
+  }
+  const rMax = Core.maxReach(g);
+  const rR = Core.minReachableRadius(g, true);
+  const rL = Core.minReachableRadius(g, false);
+  const ground = -(c.clearanceMm + c.bodyMm);
+  const fore = Core.foreLength(g);
+  const jaw = Math.min(Math.max(g.jawMm, 0), Math.max(fore - 1, 0));
+  // 地面上（y=ground、x>0）能碰到的最前/最后：固件口径与「另一支」口径各扫一遍
+  let fLo = Infinity;
+  let fHi = -Infinity;
+  let pLo = Infinity;
+  let pHi = -Infinity;
+  for (let x = 0; x <= rMax + 20; x += 1) {
+    let fw = false;
+    let ph = false;
+    for (let s = 0; s <= jaw + 1e-9 && !(fw && ph); s += 2) {
+      const l2 = Math.max(Core.MIN_RADIUS_MM, fore - s);
+      if (!fw) {
+        const sol = Core.solveXYAt(g, x, ground, l2);
+        if (sol.reachable && !sol.limited) { fw = true; }
+      }
+      if (!ph && Core.reachableAnyAt(g, l2, x, ground)) { ph = true; }
+    }
+    if (fw) {
+      if (x < fLo) { fLo = x; }
+      if (x > fHi) { fHi = x; }
+    }
+    if (ph) {
+      if (x < pLo) { pLo = x; }
+      if (x > pHi) { pHi = x; }
+    }
+  }
+  const val = {
+    fore: fore,
+    jaw: jaw,
+    rMax: rMax,
+    rR: rR,
+    rL: rL,
+    bandR: rMax - rR,
+    bandL: rMax - rL,
+    ground: ground,
+    fLo: fLo,
+    fHi: fHi,
+    pLo: pLo,
+    pHi: pHi
+  };
+  derivedMemo = { key: key, val: val };
+  return val;
+}
+
+function renderDerived() {
+  const d = derived();
+  const c = CFG.chassis;
+  const front = c.frontMm;
+  const rng = function (a, b) {
+    return isFinite(a) && isFinite(b)
+      ? fmt(a, 1) + " ~ " + fmt(b, 1)
+      : "（地面上够不到）";
+  };
+  const gMax = CFG.geom.upperMm + graspLink();
+  $("#derived").innerHTML =
+    "真实小臂 <b>" + fmt(d.fore) + "</b> mm（" + fmt(CFG.geom.foreMm) + " + " + fmt(CFG.geom.toolMm) +
+    "）· 夹爪 <b>" + fmt(d.jaw, 0) + "</b> mm<br>" +
+    "指尖最大伸展 <b>" + fmt(d.rMax) + "</b>　夹取点（s=" + fmt(CFG.state.graspMm, 1) +
+    "）最大 <b>" + fmt(gMax) + "</b><br>" +
+    "指尖内半径 右 <b>" + fmt(d.rR) + "</b> / 左 <b>" + fmt(d.rL) +
+    "</b>　带宽 " + fmt(d.bandR) + " / " + fmt(d.bandL) + "<br>" +
+    "地面 y=" + fmt(d.ground, 0) + " 固件 x <b>" + rng(d.fLo, d.fHi) + "</b>　另一支 x <b>" +
+    rng(d.pLo, d.pHi) + "</b>" +
+    (isFinite(d.pLo) ? "（前端外 " + fmt(d.pLo - front, 1) + " ~ " + fmt(d.pHi - front, 1) + "）" : "");
+}
+
+/* ======================= 自检（对应 arm_config.hpp 的 static_assert） ======================= */
+function selfChecks() {
+  const g = CFG.geom;
+  const m = CFG.motion;
+  const w = CFG.ws;
+  const l2 = Core.foreLength(g);
+  const out = [];
+  out.push({ ok: g.upperMm > 0 && l2 > 0, t: "连杆长度为正" });
+  out.push({ ok: Math.abs(g.upperMm - l2) > 10, t: "|L1−L2| > 10 mm（折叠区不病态）" });
+  out.push({ ok: g.elbowSign === 1 || g.elbowSign === -1, t: "elbow_sign ∈ {+1, −1}" });
+  ["shoulder", "elbow"].forEach(function (k) {
+    const c = g[k];
+    const dpp = Math.abs(c.degPerPercent) > 1e-9 ? Math.abs(c.degPerPercent) : 1e-9;
+    const span = Math.abs(c.maxDeg - c.minDeg) / dpp;
+    const mid = (c.minDeg + c.maxDeg) / 2;
+    const pmin = (c.minDeg - c.zeroDeg) / dpp;
+    const pmax = (c.maxDeg - c.zeroDeg) / dpp;
+    out.push({ ok: span <= 200 + 1e-6, t: k + " 行程 " + span.toFixed(1) + "% ≤ 200%" });
+    out.push({ ok: Math.abs(c.zeroDeg - mid) < 0.06, t: k + " zero = 行程中点 " + mid.toFixed(1) + "°" });
+    out.push({ ok: pmin >= -100 - 1e-9 && pmax <= 100 + 1e-9,
+      t: k + " 限位在 ±100%（" + pmin.toFixed(1) + " ~ " + pmax.toFixed(1) + "%）" });
+  });
+  out.push({ ok: w.xMin < w.xMax && w.yMin < w.yMax, t: "工作区上下界不倒挂" });
+  out.push({
+    ok: w.xMin > 0,
+    note: w.xMin <= 0,
+    t: "x_min > 0（固件现状；跨肩轴要同步放开 static_assert）"
+  });
+  out.push({ ok: w.xMax <= l2 + g.upperMm + 1e-6, t: "x_max ≤ L1+L2" });
+  out.push({
+    ok: CFG.poses.every((p) => p.x >= w.xMin && p.x <= w.xMax && p.y >= w.yMin && p.y <= w.yMax),
+    t: "8 条预设都在工作区内"
+  });
+  const need = (m.cartSpeed / 60) * DEG / (Math.abs(g.shoulder.degPerPercent) || 1e-9);
+  out.push({ ok: m.slew > need * 4, t: "slew 余量 > 4×（需 " + need.toFixed(1) + " %/s）" });
+  return out;
+}
+
+function renderChecks() {
+  const rows = selfChecks();
+  $("#checks").innerHTML = rows.map(function (r) {
+    const cls = r.ok ? "ok" : (r.note ? "warn" : "no");
+    const sym = r.ok ? "✓" : (r.note ? "!" : "✗");
+    return '<div class="' + cls + '"><span>' + sym + "</span><span>" + r.t + "</span></div>";
+  }).join("");
+}
+
+/* ======================= 绘图 ======================= */
+function line(x1, y1, x2, y2) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+function text(s, x, y, color, font, align) {
+  ctx.fillStyle = color || "#9fb4cc";
+  ctx.font = font || "11px ui-monospace,Consolas,monospace";
+  ctx.textAlign = align || "left";
+  ctx.fillText(s, x, y);
+  ctx.textAlign = "left";
+}
+function tag(s, x, y, color) {
+  ctx.font = "600 11.5px ui-monospace,Consolas,monospace";
+  const w = ctx.measureText(s).width;
+  ctx.fillStyle = "#070b11e6";
+  ctx.fillRect(x - 4, y - 11, w + 8, 15);
+  ctx.fillStyle = color;
+  ctx.fillText(s, x, y);
+}
+
+function drawGrid() {
+  const v = view;
+  ctx.lineWidth = 1;
+  for (let gx = Math.ceil(v.x0 / 50) * 50; gx <= v.x1; gx += 50) {
+    const p = P(gx, 0);
+    ctx.strokeStyle = gx === 0 ? "#243343" : "#121b25";
+    line(p.x, 0, p.x, v.H);
+  }
+  for (let gy = Math.ceil(v.y0 / 50) * 50; gy <= v.y1; gy += 50) {
+    const p = P(0, gy);
+    ctx.strokeStyle = gy === 0 ? "#243343" : "#121b25";
+    line(0, p.y, v.W, p.y);
+  }
+}
+
+function drawGround() {
+  const v = view;
+  const p = P(v.x0, v.ground);
+  ctx.strokeStyle = "#4b5f75";
+  ctx.lineWidth = 2;
+  line(0, p.y, v.W, p.y);
+  ctx.strokeStyle = "#1d2937";
+  ctx.lineWidth = 1;
+  for (let x = -30; x < v.W + 30; x += 14) {
+    line(x, p.y + 2, x + 12, p.y + 12);
+  }
+  text("地面 y = " + fmt(v.ground, 0), 8, p.y - 5, "#5d7590");
+}
+
+function drawChassis() {
+  const c = CFG.chassis;
+  const rear = c.frontMm - c.lenMm;
+  const bottom = -c.bodyMm;
+
+  // 车轮：半径 = 离地间隙，轮轴在底盘下沿（最低点正好落在地面）
+  const wr = c.clearanceMm;
+  if (wr > 2) {
+    const cx1 = rear + Math.min(58, c.lenMm * 0.22);
+    const cx2 = c.frontMm - Math.min(58, c.lenMm * 0.22);
+    [cx1, cx2].forEach(function (cx) {
+      const p = P(cx, bottom);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, wr * view.S, 0, Math.PI * 2);
+      ctx.fillStyle = "#121b25";
+      ctx.fill();
+      ctx.strokeStyle = "#33475c";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+  }
+
+  const a = P(rear, bottom);
+  const b = P(c.frontMm, 0);
+  ctx.fillStyle = "#16222f";
+  ctx.strokeStyle = "#3d556e";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const w = b.x - a.x;
+  const h = a.y - b.y;
+  const rr = Math.min(5, Math.abs(w) / 2, Math.abs(h) / 2);
+  ctx.moveTo(a.x + rr, b.y);
+  ctx.lineTo(b.x - rr, b.y);
+  ctx.quadraticCurveTo(b.x, b.y, b.x, b.y + rr);
+  ctx.lineTo(b.x, a.y - rr);
+  ctx.quadraticCurveTo(b.x, a.y, b.x - rr, a.y);
+  ctx.lineTo(a.x + rr, a.y);
+  ctx.quadraticCurveTo(a.x, a.y, a.x, a.y - rr);
+  ctx.lineTo(a.x, b.y + rr);
+  ctx.quadraticCurveTo(a.x, b.y, a.x + rr, b.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 底座
+  const o = P(0, 0);
+  ctx.beginPath();
+  ctx.arc(o.x, o.y, 6.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#070b11";
+  ctx.strokeStyle = "#9fb4cc";
+  ctx.lineWidth = 2.5;
+  ctx.fill();
+  ctx.stroke();
+  tag("臂底座 (0,0)", o.x - 88, o.y - 10, "#9fb4cc");
+}
+
+function drawDims() {
+  const c = CFG.chassis;
+  const rear = c.frontMm - c.lenMm;
+  const v = view;
+  ctx.lineWidth = 1;
+
+  // 底盘长度：画在视图最下面一条
+  const yb = v.y0 + 9;
+  const pa = P(rear, yb);
+  const pb = P(c.frontMm, yb);
+  ctx.strokeStyle = "#3a4c60";
+  line(pa.x, pa.y, pb.x, pb.y);
+  line(pa.x, pa.y - 4, pa.x, pa.y + 4);
+  line(pb.x, pb.y - 4, pb.x, pb.y + 4);
+  text("底盘 L = " + fmt(c.lenMm) + "（259.08 + 6）", (pa.x + pb.x) / 2, pa.y - 5, "#5d7590", null, "center");
+
+  // 底座中心 → 前端
+  const p0 = P(0, 12);
+  const p1 = P(c.frontMm, 12);
+  ctx.strokeStyle = "#4a6076";
+  line(p0.x, p0.y, p1.x, p1.y);
+  line(p0.x, p0.y - 4, p0.x, p0.y + 4);
+  line(p1.x, p1.y - 4, p1.x, p1.y + 4);
+  text(fmt(c.frontMm), (p0.x + p1.x) / 2, p0.y - 6, "#7d93a9", null, "center");
+
+  // 臂底座离地高度
+  const ph0 = P(c.frontMm + 20, v.ground);
+  const ph1 = P(c.frontMm + 20, 0);
+  ctx.strokeStyle = "#3a4c60";
+  line(ph0.x, ph0.y, ph1.x, ph1.y);
+  line(ph0.x - 4, ph0.y, ph0.x + 4, ph0.y);
+  line(ph1.x - 4, ph1.y, ph1.x + 4, ph1.y);
+  text("77（37+40）", ph1.x + 7, (ph0.y + ph1.y) / 2, "#5d7590");
+}
+
+function drawWs() {
+  const w = CFG.ws;
+  const a = P(w.xMin, w.yMax);
+  const b = P(w.xMax, w.yMin);
+  ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = "#a78bfacc";
+  ctx.lineWidth = 1.6;
+  ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
+  ctx.setLineDash([]);
+  text("工作区 x " + fmt(w.xMin, 0) + "~" + fmt(w.xMax, 0) + " · y " + fmt(w.yMin, 0) + "~" + fmt(w.yMax, 0),
+    a.x + 6, a.y + 14, "#b9a7ff");
+}
+
+function jawLen() {
+  return Math.max(0, Math.min(CFG.geom.jawMm, Core.foreLength(CFG.geom) - 1));
+}
+
+/** 夹取点对应的肘→目标长度：夹爪占末端 jawMm，抓取点可落在其中任意位置 */
+function graspLink() {
+  return Math.max(Core.MIN_RADIUS_MM, Core.foreLength(CFG.geom) - Core.clampf(CFG.state.graspMm, 0, jawLen()));
+}
+
+function graspSolve(x, y) {
+  return Core.solveXYAt(CFG.geom, x, y, graspLink());
+}
+
+/** 当前姿态的全部几何：肘、腕（夹爪根）、指尖、夹取点 */
+function poseParts(p1In, p2In, sIn) {
+  const g = CFG.geom;
+  const st = CFG.state;
+  const p1 = (typeof p1In === "number") ? p1In : st.p1;
+  const p2 = (typeof p2In === "number") ? p2In : st.p2;
+  const t1 = Core.percentToDeg(g.shoulder, p1) * RAD;
+  const t2 = Core.percentToDeg(g.elbow, p2) * RAD;
+  const sum = t1 + t2;
+  const fore = Core.foreLength(g);
+  const jaw = jawLen();
+  const s = Core.clampf((typeof sIn === "number") ? sIn : st.graspMm, 0, jaw);
+  const ux = Math.cos(sum);
+  const uy = Math.sin(sum);
+  const ex = g.upperMm * Math.cos(t1);
+  const ey = g.upperMm * Math.sin(t1);
+  return {
+    t1: t1 * DEG,
+    t2: t2 * DEG,
+    ex: ex,
+    ey: ey,
+    ux: ux,
+    uy: uy,
+    fore: fore,
+    jaw: jaw,
+    s: s,
+    wristX: ex + (fore - jaw) * ux,
+    wristY: ey + (fore - jaw) * uy,
+    tipX: ex + fore * ux,
+    tipY: ey + fore * uy,
+    graspX: ex + (fore - s) * ux,
+    graspY: ey + (fore - s) * uy
+  };
+}
+
+function drawGripper(tipX, tipY, ux, uy, jaw, openHalf, color) {
+  const main = color || "#f5a524";
+  const px = -uy;
+  const py = ux;
+  const bx = tipX - ux * jaw;
+  const by = tipY - uy * jaw;
+  ctx.strokeStyle = main;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  [-1, 1].forEach(function (k) {
+    const a = P(bx + px * openHalf * k, by + py * openHalf * k);
+    const b = P(tipX + px * openHalf * k, tipY + py * openHalf * k);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  });
+  const c0 = P(bx + px * openHalf, by + py * openHalf);
+  const c1 = P(bx - px * openHalf, by - py * openHalf);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(c0.x, c0.y);
+  ctx.lineTo(c1.x, c1.y);
+  ctx.stroke();
+  // 夹爪中线：夹取点就是沿这条线取的
+  ctx.strokeStyle = main + "66";
+  ctx.lineWidth = 1;
+  const m0 = P(bx, by);
+  const m1 = P(tipX, tipY);
+  ctx.beginPath();
+  ctx.moveTo(m0.x, m0.y);
+  ctx.lineTo(m1.x, m1.y);
+  ctx.stroke();
+}
+
+function drawArm() {
+  const g = CFG.geom;
+  const pp = poseParts();
+  const o = P(0, 0);
+  const e = P(pp.ex, pp.ey);
+  const w = P(pp.wristX, pp.wristY);
+  const t = P(pp.tipX, pp.tipY);
+  const gp = P(pp.graspX, pp.graspY);
+
+  ctx.lineCap = "round";
+  const hit = poseHits();
+  const red = "#ff6b6b";
+  const c1 = hit.indexOf("大臂") >= 0 ? red : "#e8eef7";
+  const c2 = hit.indexOf("小臂") >= 0 ? red : "#22d3ee";
+  const c3 = hit.indexOf("夹爪") >= 0 ? red : "#f5a524";
+
+  // 大臂
+  ctx.strokeStyle = c1;
+  ctx.lineWidth = 7;
+  line(o.x, o.y, e.x, e.y);
+
+  // 小臂（到夹爪根）
+  ctx.strokeStyle = c2;
+  ctx.lineWidth = 6;
+  line(e.x, e.y, w.x, w.y);
+
+  // 夹爪（末端 jawMm）
+  drawGripper(pp.tipX, pp.tipY, pp.ux, pp.uy, pp.jaw,
+    3 + 9 * (CFG.state.p3 + 100) / 200, c3);
+  if (hit.length) {
+    tag("干涉：" + hit.join(" + "), e.x + 12, e.y - 26, red);
+  }
+
+  // 关节
+  [[o, 6, "#e8eef7"], [e, 5, "#e8eef7"], [w, 3.6, "#f5a524"]].forEach(function (j) {
+    ctx.beginPath();
+    ctx.arc(j[0].x, j[0].y, j[1], 0, Math.PI * 2);
+    ctx.fillStyle = "#070b11";
+    ctx.strokeStyle = j[2];
+    ctx.lineWidth = 2.2;
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  // 夹取点
+  ctx.beginPath();
+  ctx.arc(gp.x, gp.y, 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#5bd98a";
+  ctx.fill();
+  ctx.strokeStyle = "#070b11";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 角度弧
+  const r1 = 34 * view.S;
+  ctx.strokeStyle = "#9fb4cc88";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(o.x, o.y, r1, 0, -pp.t1 * RAD, true);
+  ctx.stroke();
+
+  const r2 = 26 * view.S;
+  ctx.strokeStyle = "#22d3eeaa";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, r2, -pp.t1 * RAD, -(pp.t1 + pp.t2) * RAD, (pp.t2 > 0 ? false : true));
+  ctx.stroke();
+
+  // 文字
+  tag("L1 " + fmt(g.upperMm), (o.x + e.x) / 2 - 6, (o.y + e.y) / 2 - 10, "#e8eef7");
+  tag("L2Σ " + fmt(pp.fore), (e.x + w.x) / 2 + 8, (e.y + w.y) / 2 + 16, "#22d3ee");
+  tag("θ1 " + fmt(pp.t1, 1) + "°", o.x + r1 + 4, o.y - 6, "#9fb4cc");
+  tag("θ2 " + fmt(pp.t2, 1) + "°", e.x + r2 + 6, e.y + 18, "#22d3ee");
+  tag("夹爪 " + fmt(pp.jaw, 0), w.x + 10, w.y - 10, "#f5a524");
+  tag("夹取点 s=" + fmt(pp.s, 1) + " (" + fmt(pp.graspX, 1) + ", " + fmt(pp.graspY, 1) + ")",
+    gp.x + 10, gp.y + 16, "#5bd98a");
+}
+
+function describe(s, x, y) {
+  if (s.limited) { return { cls: "bad", txt: "关节越限 → 固件不下发" }; }
+  const hits = poseHits(s.shoulderPercent, s.elbowPercent);
+  if (hits.length) {
+    return { cls: "bad", txt: "机械干涉（" + hits.join(" + ") + " 撞底盘）→ 碰不到" };
+  }
+  if (s.reachable) { return { cls: "ok", txt: "精确命中" }; }
+  return { cls: "warn", txt: "沿方位钳到边界（照发）" };
+}
+
+function collision(x, y) {
+  const c = CFG.chassis;
+  const rear = c.frontMm - c.lenMm;
+  const ground = -(c.clearanceMm + c.bodyMm);
+  const out = [];
+  if (y < ground) { out.push("低于地面"); }
+  if (x >= rear && x <= c.frontMm) {
+    if (y <= 0 && y >= -c.bodyMm) { out.push("进入底盘"); }
+    else if (y < -c.bodyMm && y >= ground - 1e-9) { out.push("在底盘下方"); }
+  }
+  return out;
+}
+
+function segmentHits() {
+  const pp = poseParts();
+  const pts = [];
+  const segs = [
+    [[0, 0], [pp.ex, pp.ey]],
+    [[pp.ex, pp.ey], [pp.tipX, pp.tipY]]
+  ];
+  segs.forEach(function (s) {
+    for (let i = 1; i <= 12; i++) {
+      const u = i / 12;
+      pts.push([s[0][0] + (s[1][0] - s[0][0]) * u, s[0][1] + (s[1][1] - s[0][1]) * u]);
+    }
+  });
+  const set = {};
+  pts.forEach(function (p) {
+    collision(p[0], p[1]).forEach(function (w) { set[w] = 1; });
+  });
+  return Object.keys(set);
+}
+
+function drawTarget() {
+  if (!target) { return; }
+  const s = Core.solveXY(CFG.geom, target.x, target.y);
+  const d = describe(s, target.x, target.y);
+  const col = d.cls === "ok" ? "#5bd98a" : (d.cls === "warn" ? "#f5a524" : "#ff6b6b");
+  const p = P(target.x, target.y);
+
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2;
+  line(p.x - 8, p.y, p.x + 8, p.y);
+  line(p.x, p.y - 8, p.x, p.y + 8);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 钳位后实际末端 → 目标 的误差连线
+  const a = P(s.x, s.y);
+  if (Math.hypot(a.x - p.x, a.y - p.y) > 4) {
+    ctx.setLineDash([3, 4]);
+    ctx.strokeStyle = col + "aa";
+    ctx.lineWidth = 1.2;
+    line(a.x, a.y, p.x, p.y);
+    ctx.setLineDash([]);
+  }
+}
+
+function draw() {
+  const v = view;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, v.W, v.H);
+  ctx.fillStyle = "#070b11";
+  ctx.fillRect(0, 0, v.W, v.H);
+
+  if ($("#optGrid").checked) { drawGrid(); }
+  if ($("#optBand").checked && band.canvas) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(band.canvas, 0, 0, v.W, v.H);
+  }
+  drawGround();
+  drawChassis();
+  if ($("#optWs").checked) { drawWs(); }
+  drawArm();
+  drawCubeMain();
+  drawTarget();
+  if ($("#optDims").checked) { drawDims(); }
+
+  // 轴示意
+  text("+x 前", v.W - 44, v.H - 10, "#3d556e");
+  text("+y 上", 10, 16, "#3d556e");
+}
+
+/* ======================= 读数 ======================= */
+function kvBox(title, rows) {
+  return '<div class="kv"><div class="kvt">' + title + "</div>" +
+    rows.map(function (r) {
+      return "<div><span class=\"k\">" + r[0] + "</span>" + r[1] + "</div>";
+    }).join("") + "</div>";
+}
+
+function servoMargin() {
+  const g = CFG.geom;
+  const st = CFG.state;
+  function margin(calib, p) {
+    const pmin = (calib.minDeg - calib.zeroDeg) / (calib.degPerPercent || 1);
+    const pmax = (calib.maxDeg - calib.zeroDeg) / (calib.degPerPercent || 1);
+    return Math.min(p - Math.min(pmin, pmax), Math.max(pmin, pmax) - p);
+  }
+  const m1 = margin(g.shoulder, st.p1);
+  const m2 = margin(g.elbow, st.p2);
+  const bad = m1 < 3 || m2 < 3;
+  return '<span class="' + (bad ? "bad" : "ok") + '">S1 余 ' + fmt(m1, 1) + "% · S2 余 " +
+    fmt(m2, 1) + "%</span>";
+}
+
+function renderReadout() {
+  const g = CFG.geom;
+  const st = CFG.state;
+  const pp = poseParts();
+  const d = derived();
+  const c = CFG.chassis;
+  const col = collision(pp.graspX, pp.graspY);
+  const hits = poseHits();
+  const boxes = [];
+
+  boxes.push(kvBox("夹取点（FK 回算）", [
+    ["坐标", "<b>(" + fmt(pp.graspX, 1) + ", " + fmt(pp.graspY, 1) + ")</b> mm　s=" + fmt(pp.s, 1)],
+    ["半径/方位", "r " + fmt(Math.hypot(pp.graspX, pp.graspY), 1) + " · β " +
+      fmt(Math.atan2(pp.graspY, pp.graspX) * DEG, 1) + "°"],
+    ["离地/距前端", fmt(pp.graspY - d.ground, 1) + " mm · " + fmt(pp.graspX - c.frontMm, 1) + " mm"],
+    ["指尖", "(" + fmt(pp.tipX, 1) + ", " + fmt(pp.tipY, 1) + ")　夹爪 " + fmt(pp.jaw, 0) + " mm"]
+  ]));
+
+  boxes.push(kvBox("关节（命令值，非实测）", [
+    ["连杆角", "θ1 <b>" + fmt(pp.t1, 1) + "°</b> · θ2 <b>" + fmt(pp.t2, 1) + "°</b>"],
+    ["行程", "S1 " + fmt(st.p1, 1) + "% · S2 " + fmt(st.p2, 1) + "%"],
+    ["夹爪/腕", "S3 " + fmt(st.p3, 0) + "% · S4 " + fmt(st.p4, 0) + "%"]
+  ]));
+
+  if (target) {
+    const s = graspSolve(target.x, target.y);
+    const dd = describe(s, target.x, target.y);
+    const scan = scanGraspOK(target.x, target.y);
+    let scanTxt;
+    if (scan.length) {
+      scanTxt = '<span class="ok">s ' + fmt(scan[0].s, 0) + " ~ " + fmt(scan[scan.length - 1].s, 0) +
+        " mm 内可咬住（共 " + scan.length + " 个位置）</span>";
+    } else {
+      scanTxt = '<span class="bad">整条夹爪线（' + fmt(jawLen(), 0) + " mm）都咬不到</span>";
+    }
+    boxes.push(kvBox("目标解算", [
+      ["目标", "(" + fmt(target.x, 1) + ", " + fmt(target.y, 1) + ") · r " +
+        fmt(Math.hypot(target.x, target.y), 1) + " · β " + fmt(Math.atan2(target.y, target.x) * DEG, 1) + "°"],
+      ["结果", '<span class="' + dd.cls + '">' + dd.txt + "</span>"],
+      ["夹取范围", scanTxt],
+      ["下发", "θ1 " + fmt(s.shoulderDeg, 1) + "° / θ2 " + fmt(s.elbowDeg, 1) +
+        "° → S1 " + fmt(s.shoulderPercent, 1) + "% / S2 " + fmt(s.elbowPercent, 1) + "%"],
+      ["FK 残差", fmt(Math.hypot(s.x - target.x, s.y - target.y), 2) + " mm"]
+    ]));
+  } else {
+    boxes.push(kvBox("目标解算", [
+      ["提示", "点或拖画布任意位置取点"],
+      ["说明", "夹取点自动落在末端 " + fmt(jawLen(), 0) + " mm 夹爪线内最合适的位置"]
+    ]));
+  }
+
+  boxes.push(kvBox("安全判定", [
+    ["夹取点", col.length ? '<span class="bad">' + col.join(" / ") + "</span>" : '<span class="ok">正常</span>'],
+    ["臂体干涉", hits.length
+      ? '<span class="bad">' + hits.join(" + ") + " 撞底盘 → 不可达</span>"
+      : '<span class="ok">无</span>'],
+    ["舵机余量", servoMargin()]
+  ]));
+
+  $("#readout").innerHTML = boxes.join("");
+}
+
+/* ======================= 臂体与底盘干涉 ======================= */
+/** 臂体与底盘上表面之间留的最小间隙（mm）：小于它就是蹭/穿 */
+const CLA_MM = 1.0;
+/** 底座半径（mm）：这圈里的点天生贴在底盘上，不算干涉 */
+const R0_MM = 14.0;
+
+/**
+ * @brief 点是否撞进底盘或钻到地面以下
+ * @details 底盘是实体：x∈[rear,front]、y∈[ground,0] 都算干涉；上表面留 CLA_MM 余量。
+ */
+function pointHitChassis(x, y) {
+  // 底座/轴承座那一圈（半径 R0）本身就坐在底盘上，不算干涉
+  if (x * x + y * y < R0_MM * R0_MM) { return false; }
+  const c = CFG.chassis;
+  const rear = c.frontMm - c.lenMm;
+  const ground = -(c.clearanceMm + c.bodyMm);
+  if (y < ground) { return true; }
+  if (x >= rear && x <= c.frontMm && y < CLA_MM) { return true; }
+  return false;
+}
+
+/**
+ * @brief 某个姿态（大臂/小臂/夹爪三段）与底盘/地面干涉的段名
+ * @param p1In 大臂行程百分比（缺省用当前）
+ * @param p2In 小臂行程百分比
+ * @return 段名数组，空数组 = 没干涉
+ */
+function poseHits(p1In, p2In) {
+  const pp = poseParts(p1In, p2In);
+  const hits = [];
+  const seg = function (ax, ay, bx, by, name, n) {
+    for (let t = 0; t <= n; t++) {
+      const x = ax + (bx - ax) * t / n;
+      const y = ay + (by - ay) * t / n;
+      if (pointHitChassis(x, y)) {
+        hits.push(name);
+        return;
+      }
+    }
+  };
+  seg(0, 0, pp.ex, pp.ey, "大臂", 6);
+  seg(pp.ex, pp.ey, pp.wristX, pp.wristY, "小臂", 8);
+  seg(pp.wristX, pp.wristY, pp.tipX, pp.tipY, "夹爪", 4);
+  return hits;
+}
+
+/* ======================= 物块（20 mm 立方体）与物理 ======================= */
+function cubeHint(html) {
+  const el = $("#cubeHint");
+  if (el) { el.innerHTML = html; }
+}
+
+function cubeHalf() {
+  return CFG.cube.sizeMm / 2;
+}
+
+function cubeSupportY(x) {
+  const c = CFG.chassis;
+  const rear = c.frontMm - c.lenMm;
+  if (x >= rear && x <= c.frontMm) { return 0; }
+  return -(c.clearanceMm + c.bodyMm);
+}
+
+/** 某个姿态下物块中心应该停的高度（最低那个顶点贴住平面） */
+function cubeRestY(yawDeg, rollDeg, planeY) {
+  const axes = Cube3D.basis(yawDeg, rollDeg);
+  return planeY - Cube3D.minYOffset(axes, CFG.cube.sizeMm);
+}
+
+/** 物块压进平面多深（> 0 表示已经穿模） */
+function cubePenetration() {
+  const c = CFG.cube;
+  const axes = Cube3D.basis(c.yawDeg, c.rollDeg);
+  const vs = Cube3D.worldVerts([c.x, c.y, 0], c.sizeMm, axes);
+  let minY = Infinity;
+  for (let i = 0; i < vs.length; i++) {
+    if (vs[i][1] < minY) { minY = vs[i][1]; }
+  }
+  return cubeSupportY(c.x) - minY;
+}
+
+/** 夹爪半开口：满行程 maxOpenMm；S3 = +100 全开、−100 全闭 */
+function jawHalf() {
+  return Math.max(0, CFG.phys.maxOpenMm * (CFG.state.p3 + 100) / 200) / 2;
+}
+
+/** 沿夹爪线扫精确解，并剔掉「会撞底盘/地面」的姿态 */
+function scanGraspOK(x, y) {
+  return Core.scanGrasp(CFG.geom, x, y, 1).filter(function (c) {
+    return poseHits(c.sol.shoulderPercent, c.sol.elbowPercent).length === 0;
+  });
+}
+
+/** 咬住时物块跟着夹取点走：位置 = 夹取点，姿态 = 前臂方向 + 腕 roll */
+function syncCube() {
+  if (!CFG.cube.held) { return; }
+  const pp = poseParts();
+  CFG.cube.x = pp.graspX;
+  CFG.cube.y = pp.graspY;
+  CFG.cube.yawDeg = pp.t1 + pp.t2;
+  CFG.cube.rollDeg = Core.clampf(CFG.state.p4 * 0.9, -180, 180);
+}
+
+function grabCube() {
+  const pp = poseParts();
+  const d = Math.hypot(CFG.cube.x - pp.graspX, CFG.cube.y - pp.graspY);
+  if (d > Math.max(14, CFG.cube.sizeMm * 0.7)) {
+    cubeHint('<span class="bad">物块离夹取点 ' + fmt(d, 1) + ' mm，先把臂摆过去</span>');
+    return false;
+  }
+  CFG.cube.held = true;
+  CFG.state.p3 = -100; // 夹紧
+  CFG.cube.fallV = 0;
+  syncCube();
+  cubeHint("已夹住 " + fmt(CFG.cube.sizeMm, 0) + " mm 立方体（S3 = −100%）");
+  refresh();
+  return true;
+}
+
+function releaseCube(msg) {
+  if (!CFG.cube.held) {
+    cubeHint("当前没夹东西");
+    return;
+  }
+  CFG.cube.held = false;
+  CFG.cube.fallV = 0;
+  syncStateSliders();
+  refresh();
+  startFall();
+  cubeHint(msg || "已松开：物块自由下落");
+}
+
+function resetCube() {
+  CFG.cube.held = false;
+  CFG.cube.fallV = 0;
+  CFG.cube.x = 200;
+  CFG.cube.yawDeg = 0;
+  CFG.cube.rollDeg = 0;
+  CFG.cube.y = cubeRestY(0, 0, cubeSupportY(200));
+  refresh();
+  cubeHint("物块回到地面 x = 200");
+}
+
+let fallTimer = 0;
+
+/** 落地后翻身躺平：就近选一个「面朝下」的姿态，180 ms 缓出 */
+function startSettle(planeY) {
+  const fromYaw = CFG.cube.yawDeg;
+  const fromRoll = CFG.cube.rollDeg;
+  const to = Cube3D.flatSnap(fromYaw, fromRoll);
+  const dYaw = Cube3D.angDiff(to.yawDeg, fromYaw);
+  const dRoll = Cube3D.angDiff(to.rollDeg, fromRoll);
+  const t0 = performance.now();
+  const DUR = 180;
+  const step = function () {
+    const k = Math.min(1, (performance.now() - t0) / DUR);
+    const e = 1 - Math.pow(1 - k, 3);
+    CFG.cube.yawDeg = fromYaw + dYaw * e;
+    CFG.cube.rollDeg = fromRoll + dRoll * e;
+    CFG.cube.y = cubeRestY(CFG.cube.yawDeg, CFG.cube.rollDeg, planeY);
+    draw();
+    drawCube3D();
+    renderCubeInfo();
+    if (k < 1) {
+      fallTimer = setTimeout(step, 16);
+      return;
+    }
+    CFG.cube.yawDeg = to.yawDeg;
+    CFG.cube.rollDeg = to.rollDeg;
+    CFG.cube.y = cubeRestY(to.yawDeg, to.rollDeg, planeY);
+    fallTimer = 0;
+    refresh();
+    cubeHint("落地并躺平（yaw " + fmt(to.yawDeg, 0) + "° · roll " + fmt(to.rollDeg, 0) + "°）");
+  };
+  fallTimer = setTimeout(step, 16);
+}
+
+function startFall() {
+  if (fallTimer) { return; }
+  // 用「时间解析式」而不是逐帧积分：标签页在后台时定时器会被节流到 1 s，
+  // 逐帧积分会变成慢动作，而解析式一次就算到正确位置。
+  const y0 = CFG.cube.y;
+  const t0 = performance.now();
+  const gmm = CFG.phys.gravity * 1000;
+  const plane = cubeSupportY(CFG.cube.x);
+  const rest = cubeRestY(CFG.cube.yawDeg, CFG.cube.rollDeg, plane);
+  const step = function () {
+    const tt = Math.max(0, (performance.now() - t0) / 1000);
+    const y = y0 - 0.5 * gmm * tt * tt;
+    CFG.cube.fallV = gmm * tt;
+    if (y <= rest) {
+      CFG.cube.fallV = 0;
+      CFG.cube.y = rest;
+      draw();
+      drawCube3D();
+      renderCubeInfo();
+      startSettle(plane);
+      return;
+    }
+    CFG.cube.y = y;
+    draw();
+    drawCube3D();
+    renderCubeInfo();
+    fallTimer = setTimeout(step, 16);
+  };
+  fallTimer = setTimeout(step, 16);
+}
+
+/** 静力学：重力力矩 vs 舵机额定；夹持力 vs 摩擦需求 */
+function physics() {
+  const P = CFG.phys;
+  const pp = poseParts();
+  const G = P.gravity;
+  const m1 = P.arm1G / 1000;
+  const m2 = P.arm2G / 1000;
+  const mc = CFG.cube.massG / 1000;
+  const held = CFG.cube.held;
+  const x1 = pp.ex / 2;
+  const x2 = pp.ex + (pp.fore / 2) * pp.ux;
+  const t1 = G / 1000 * (m1 * x1 + m2 * x2 + (held ? mc * pp.graspX : 0));
+  const t2 = G / 1000 * (m2 * (pp.fore / 2) * pp.ux +
+    (held ? mc * (pp.fore - pp.s) * pp.ux : 0));
+  const rated1 = Math.max(1e-9, P.tau1KgCm * 0.0980665);
+  const rated2 = Math.max(1e-9, P.tau2KgCm * 0.0980665);
+  const need = held ? mc * G / (2 * Math.max(P.mu, 1e-6)) : 0;
+  const have = P.jawForceN * Math.min(1, Math.abs(CFG.state.p3) / 100);
+  return {
+    t1: t1, t2: t2, rated1: rated1, rated2: rated2,
+    need: need, have: have, held: held,
+    over1: Math.abs(t1) > rated1, over2: Math.abs(t2) > rated2,
+    slip: held && need > have
+  };
+}
+
+function renderCubeInfo() {
+  const c = CFG.cube;
+  const P = CFG.phys;
+  const ph = physics();
+  const planeY = cubeSupportY(c.x);
+  const pen = cubePenetration();
+  const snap = Cube3D.flatSnap(c.yawDeg, c.rollDeg);
+  const flatNow = Math.abs(Cube3D.angDiff(c.yawDeg, snap.yawDeg)) < 0.5 &&
+    Math.abs(Cube3D.angDiff(c.rollDeg, snap.rollDeg)) < 0.5;
+  const pct = function (t, r) { return (Math.abs(t) / r * 100).toFixed(0) + "%"; };
+  const faces = Cube3D.FACES.map(function (f) {
+    return '<span><i style="background:' + f.color + '"></i>' + f.id + " " + f.label + "</span>";
+  }).join("");
+  $("#cubeinfo").innerHTML =
+    "物块 <b>" + fmt(c.sizeMm, 0) + "×" + fmt(c.sizeMm, 0) + "×" + fmt(c.sizeMm, 0) +
+    " mm</b> · <b>" + fmt(c.massG, 1) + " g</b>" +
+    (c.held ? ' <span class="ok">夹住中</span>' : ' <span class="warn">自由</span>') +
+    "　位置 (" + fmt(c.x, 1) + ", " + fmt(c.y, 1) + ")<br>" +
+    '<div class="facelegend">' + faces + "</div>" +
+    "姿态 yaw <b>" + fmt(c.yawDeg, 1) + "°</b> · roll <b>" + fmt(c.rollDeg, 1) + "°</b>" +
+    (flatNow ? ' <span class="ok">躺平</span>' : ' <span class="warn">斜着</span>') + "<br>" +
+    "贴面 y <b>" + fmt(planeY, 0) + "</b> · 最低点 y " + fmt(planeY - pen, 1) +
+    " · 压入 <b>" + fmt(Math.max(0, pen), 1) + "</b> mm" +
+    (pen > 0.6 ? ' <span class="bad">压进平面</span>' : "") + "<br>" +
+    "肩力矩 <b>" + fmt(ph.t1, 3) + '</b> N·m（' + pct(ph.t1, ph.rated1) +
+    (ph.over1 ? ' <span class="bad">超额定</span>' : "") + "）<br>" +
+    "肘力矩 <b>" + fmt(ph.t2, 3) + '</b> N·m（' + pct(ph.t2, ph.rated2) +
+    (ph.over2 ? ' <span class="bad">超额定</span>' : "") + "）<br>" +
+    "夹持需 <b>" + fmt(ph.need, 2) + "</b> N / 可用 <b>" + fmt(ph.have, 2) + "</b> N（μ " +
+    fmt(P.mu, 2) + "）" + (ph.slip ? ' <span class="bad">会打滑</span>' : ' <span class="ok">夹得住</span>');
+}
+
+function drawCubeMain() {
+  const c = CFG.cube;
+  const axes = Cube3D.basis(c.yawDeg, c.rollDeg);
+  const verts = Cube3D.worldVerts([c.x, c.y, 0], c.sizeMm, axes);
+  const hull = Cube3D.hullXY(verts);
+  ctx.beginPath();
+  hull.forEach(function (p, i) {
+    const q = P(p[0], p[1]);
+    if (i) { ctx.lineTo(q.x, q.y); } else { ctx.moveTo(q.x, q.y); }
+  });
+  ctx.closePath();
+  const pen = cubePenetration();
+  ctx.fillStyle = pen > 0.6 ? "#ff6b6b38" : (c.held ? "#f5a52440" : "#f5a52426");
+  ctx.fill();
+  ctx.strokeStyle = pen > 0.6 ? "#ff6b6b" : "#f5a524";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const p = P(c.x, c.y);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+  ctx.fillStyle = "#f5a524";
+  ctx.fill();
+  if (!c.held) {
+    tag("物块 " + fmt(c.sizeMm, 0), p.x + 12, p.y + 20, "#f5a524");
+  }
+}
+
+function hexRgb(h) {
+  const v = parseInt(h.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function drawCube3D() {
+  const cv = $("#cv3d");
+  if (!cv) { return; }
+  const d2 = Math.min(window.devicePixelRatio || 1, 2);
+  const W = cv.clientWidth || 240;
+  const H = cv.clientHeight || 200;
+  const nw = Math.round(W * d2);
+  const nh = Math.round(H * d2);
+  if (cv.width !== nw || cv.height !== nh) {
+    cv.width = nw;
+    cv.height = nh;
+  }
+  const g3 = cv.getContext("2d");
+  g3.setTransform(d2, 0, 0, d2, 0, 0);
+  g3.fillStyle = "#0b1220";
+  g3.fillRect(0, 0, W, H);
+
+  const cam = Cube3D.camera(38, 20);
+  const axes = Cube3D.basis(CFG.cube.yawDeg, CFG.cube.rollDeg);
+  const vs = Cube3D.worldVerts([0, 0, 0], CFG.cube.sizeMm, axes);
+  const faces = Cube3D.project(vs, axes, cam);
+
+  let maxR = 1;
+  vs.forEach(function (v) {
+    maxR = Math.max(maxR, Math.hypot(Cube3D.dot(v, cam.right), Cube3D.dot(v, cam.up)));
+  });
+  const S = (Math.min(W, H) / 2 - 15) / maxR;
+  const cx = W / 2;
+  const cy = H / 2;
+
+  faces.forEach(function (f) {
+    g3.beginPath();
+    f.poly.forEach(function (q, i) {
+      const X = cx + q[0] * S;
+      const Y = cy + q[1] * S;
+      if (i) { g3.lineTo(X, Y); } else { g3.moveTo(X, Y); }
+    });
+    g3.closePath();
+    const rgb = hexRgb(f.color);
+    g3.fillStyle = "rgb(" + Math.round(rgb[0] * f.shade) + "," +
+      Math.round(rgb[1] * f.shade) + "," + Math.round(rgb[2] * f.shade) + ")";
+    g3.fill();
+    g3.strokeStyle = "#0b1220";
+    g3.lineWidth = 1.2;
+    g3.stroke();
+
+    let mx = 0;
+    let my = 0;
+    f.poly.forEach(function (q) { mx += q[0]; my += q[1]; });
+    mx /= 4;
+    my /= 4;
+    // 面号：深色圆底 + 白字，保证在任何明暗面上都读得出来
+    g3.beginPath();
+    g3.arc(cx + mx * S, cy + my * S, 7, 0, Math.PI * 2);
+    g3.fillStyle = "rgba(8,12,18,.72)";
+    g3.fill();
+    g3.fillStyle = "#eaf2fb";
+    g3.font = "700 10px ui-monospace,Consolas,monospace";
+    g3.textAlign = "center";
+    g3.textBaseline = "middle";
+    g3.fillText(String(f.id), cx + mx * S, cy + my * S + 0.5);
+  });
+
+  // 三轴：u 前臂 / v 夹爪开合 / w 侧向
+  const AX = [[0, "#e8eef7"], [1, "#22d3ee"], [2, "#a78bfa"]];
+  AX.forEach(function (a) {
+    const vx = Cube3D.dot(axes[a[0]], cam.right);
+    const vy = Cube3D.dot(axes[a[0]], cam.up);
+    g3.strokeStyle = a[1];
+    g3.lineWidth = 1.5;
+    g3.beginPath();
+    g3.moveTo(cx, cy);
+    g3.lineTo(cx + vx * S * CFG.cube.sizeMm * 0.52, cy - vy * S * CFG.cube.sizeMm * 0.52);
+    g3.stroke();
+  });
+
+  g3.textAlign = "left";
+  g3.textBaseline = "alphabetic";
+  g3.font = "10px ui-monospace,Consolas,monospace";
+  g3.fillStyle = "#59697d";
+  g3.fillText("3D 位姿 · u 前臂 v 夹爪 w 侧向", 8, H - 7);
+}
+
+/* ======================= 参数面板 ======================= */
+const GROUPS = [
+  {
+    host: "grp-cube", items: [
+      { sub: "物块" },
+      { k: "cube.sizeMm", l: "边长", u: "mm", s: 1, min: 2, max: 200 },
+      { k: "cube.massG", l: "质量", u: "g", s: 0.5, min: 0, max: 5000 },
+      { sub: "夹爪" },
+      { k: "phys.maxOpenMm", l: "最大开口", u: "mm", s: 1, min: 2, max: 200 },
+      { k: "phys.jawForceN", l: "最大夹紧力", u: "N", s: 0.1, min: 0, max: 100 },
+      { k: "phys.mu", l: "摩擦系数 μ", u: "", s: 0.01, min: 0.01, max: 2 },
+      { sub: "臂段质量 / 舵机" },
+      { k: "phys.arm1G", l: "大臂段质量", u: "g", s: 1, min: 0, max: 5000 },
+      { k: "phys.arm2G", l: "小臂+夹爪", u: "g", s: 1, min: 0, max: 5000 },
+      { k: "phys.tau1KgCm", l: "肩额定扭矩", u: "kg·cm", s: 0.1, min: 0.1, max: 100 },
+      { k: "phys.tau2KgCm", l: "肘额定扭矩", u: "kg·cm", s: 0.1, min: 0.1, max: 100 }
+    ]
+  },
+  {
+    host: "grp-geom", items: [
+      { sub: "连杆" },
+      { k: "geom.upperMm", l: "L1 大臂", u: "mm", s: 0.01, min: 5, max: 800, sl: [20, 300], geo: 1 },
+      { k: "geom.foreMm", l: "L2 小臂（腕点）", u: "mm", s: 0.01, min: 1, max: 800, sl: [10, 300], geo: 1 },
+      { k: "geom.toolMm", l: "工具延伸（腕点→末端）", u: "mm", s: 0.01, min: 0, max: 800, sl: [0, 300], geo: 1 },
+      { k: "geom.jawMm", l: "夹爪占末端", u: "mm", s: 0.5, min: 0, max: 200, sl: [0, 120], geo: 1 },
+      { sub: "底盘（从动的碰撞体）" },
+      { k: "chassis.lenMm", l: "底盘长度 L", u: "mm", s: 0.01, min: 50, max: 900, geo: 1 },
+      { k: "chassis.frontMm", l: "底座中心→前端", u: "mm", s: 0.01, min: 0, max: 500, geo: 1 },
+      { k: "chassis.clearanceMm", l: "底盘下沿离地", u: "mm", s: 0.5, min: 0, max: 200, geo: 1 },
+      { k: "chassis.bodyMm", l: "底盘本体厚度", u: "mm", s: 0.5, min: 5, max: 300, geo: 1 }
+    ]
+  },
+  {
+    host: "grp-cal", items: [
+      { sub: "大臂 shoulder" },
+      { k: "geom.shoulder.zeroDeg", l: "zero_deg", u: "°", s: 0.1, min: -360, max: 360, geo: 1 },
+      { k: "geom.shoulder.degPerPercent", l: "deg_per_percent", u: "°/％", s: 0.001, min: -5, max: 5, geo: 1 },
+      { k: "geom.shoulder.minDeg", l: "range_min_deg", u: "°", s: 0.1, min: -360, max: 360, geo: 1 },
+      { k: "geom.shoulder.maxDeg", l: "range_max_deg", u: "°", s: 0.1, min: -360, max: 360, geo: 1 },
+      { sub: "小臂 elbow" },
+      { k: "geom.elbow.zeroDeg", l: "zero_deg", u: "°", s: 0.1, min: -360, max: 360, geo: 1 },
+      { k: "geom.elbow.degPerPercent", l: "deg_per_percent", u: "°/％", s: 0.001, min: -5, max: 5, geo: 1 },
+      { k: "geom.elbow.minDeg", l: "range_min_deg", u: "°", s: 0.1, min: -360, max: 360, geo: 1 },
+      { k: "geom.elbow.maxDeg", l: "range_max_deg", u: "°", s: 0.1, min: -360, max: 360, geo: 1 }
+    ]
+  },
+  {
+    host: "grp-ws", action: "fit", items: [
+      { sub: "工作区（软边界 kWorkspace）" },
+      { k: "ws.xMin", l: "x_min", u: "mm", s: 0.5, min: -500, max: 800 },
+      { k: "ws.xMax", l: "x_max", u: "mm", s: 0.5, min: -500, max: 800 },
+      { k: "ws.yMin", l: "y_min", u: "mm", s: 0.5, min: -500, max: 800 },
+      { k: "ws.yMax", l: "y_max", u: "mm", s: 0.5, min: -500, max: 800 },
+      { sub: "手感（kMotion）" },
+      { k: "motion.cartSpeed", l: "cart_speed", u: "mm/s", s: 1, min: 1, max: 500 },
+      { k: "motion.slew", l: "slew", u: "%/s", s: 1, min: 1, max: 2000 },
+      { k: "motion.settle", l: "settle", u: "%", s: 0.1, min: 0, max: 50 },
+      { k: "motion.sag", l: "sag", u: "mm/100", s: 0.01, min: 0, max: 20 },
+      { k: "motion.maxElapsedMs", l: "max_elapsed_ms", u: "ms", s: 1, min: 1, max: 1000 },
+      { k: "motion.jog.0", l: "jog 肩", u: "%/s", s: 1, min: 1, max: 1000 },
+      { k: "motion.jog.1", l: "jog 肘", u: "%/s", s: 1, min: 1, max: 1000 },
+      { k: "motion.jog.2", l: "jog 夹爪", u: "%/s", s: 1, min: 1, max: 1000 },
+      { k: "motion.jog.3", l: "jog 腕", u: "%/s", s: 1, min: 1, max: 1000 }
+    ]
+  }
+];
+
+/** 一个数值行（标签 + 数字框 + 单位 [+ 滑块]） */
+function fieldRow(it) {
+  const row = document.createElement("div");
+  row.className = "field";
+  const lab = document.createElement("span");
+  lab.className = "flabel";
+  lab.textContent = it.l;
+  const inp = document.createElement("input");
+  inp.type = "number";
+  inp.step = it.s;
+  inp.min = it.min;
+  inp.max = it.max;
+  inp.value = fmt(getPath(CFG, it.k), it.s < 0.01 ? 3 : (it.s < 1 ? 2 : 1));
+  const unit = document.createElement("span");
+  unit.className = "funit";
+  unit.textContent = it.u || "";
+  row.append(lab, inp, unit);
+
+  inp.addEventListener("input", function () {
+    const v = parseFloat(inp.value);
+    if (!isFinite(v)) { return; }
+    setPath(CFG, it.k, v);
+    onChange(!!it.geo);
+  });
+
+  if (it.sl) {
+    const sl = document.createElement("div");
+    sl.className = "slide";
+    const rg = document.createElement("input");
+    rg.type = "range";
+    rg.min = it.sl[0];
+    rg.max = it.sl[1];
+    rg.step = it.s;
+    rg.value = getPath(CFG, it.k);
+    rg.addEventListener("input", function () {
+      const v = parseFloat(rg.value);
+      inp.value = fmt(v, 2);
+      setPath(CFG, it.k, v);
+      onChange(true);
+    });
+    it.rg = rg;
+    sl.appendChild(rg);
+    row.appendChild(sl);
+  }
+
+  it.el = inp;
+  bindings.push(it);
+  return row;
+}
+
+function buildSections() {
+  bindings.length = 0;
+  GROUPS.forEach(function (gr) {
+    const host = document.getElementById(gr.host);
+    if (!host) { return; }
+    host.innerHTML = "";
+    gr.items.forEach(function (it) {
+      if (it.sub) {
+        const d = document.createElement("div");
+        d.className = "subhead";
+        d.textContent = it.sub;
+        host.appendChild(d);
+        return;
+      }
+      host.appendChild(fieldRow(it));
+    });
+    if (gr.action === "fit") {
+      const b = document.createElement("button");
+      b.textContent = "按可达域重新拟合";
+      b.style.marginTop = "5px";
+      b.addEventListener("click", function () {
+        CFG.ws = fitWorkspaceRect();
+        syncInputs();
+        refresh();
+      });
+      host.appendChild(b);
+    }
+  });
+}
+
+function syncInputs() {
+  bindings.forEach(function (it) {
+    if (it.el) {
+      it.el.value = fmt(getPath(CFG, it.k), it.s < 0.01 ? 3 : (it.s < 1 ? 2 : 1));
+    }
+    if (it.rg) { it.rg.value = getPath(CFG, it.k); }
+  });
+}
+
+function syncStateSliders() {
+  $("#r1").value = CFG.state.p1;
+  $("#r2").value = CFG.state.p2;
+  $("#r3").value = CFG.state.p3;
+  $("#r4").value = CFG.state.p4;
+  $("#r5").max = jawLen();
+  $("#r5").value = Core.clampf(CFG.state.graspMm, 0, jawLen());
+  const g = CFG.geom;
+  $("#v1").textContent = fmt(CFG.state.p1, 1) + "% ⇔ " +
+    fmt(Core.percentToDeg(g.shoulder, CFG.state.p1), 1) + "°";
+  $("#v2").textContent = fmt(CFG.state.p2, 1) + "% ⇔ " +
+    fmt(Core.percentToDeg(g.elbow, CFG.state.p2), 1) + "°";
+  $("#v3").textContent = fmt(CFG.state.p3, 0) + "%";
+  $("#v4").textContent = fmt(CFG.state.p4, 0) + "%";
+  $("#v5").textContent = "s " + fmt(CFG.state.graspMm, 1) + " mm（距指尖）";
+  $("#tx").value = target ? fmt(target.x, 1) : "";
+  $("#ty").value = target ? fmt(target.y, 1) : "";
+}
+
+/* ======================= 工作区拟合 / 预设 ======================= */
+function fitWorkspaceRect() {
+  const g = CFG.geom;
+  const rMax = Core.maxReach(g);
+  const ground = -(CFG.chassis.clearanceMm + CFG.chassis.bodyMm);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  // 前后都算工作区（跨肩轴由斜坡方案支持），所以 x 从负到正都扫
+  for (let x = -(rMax + 20); x <= rMax + 20; x += 4) {
+    for (let y = Math.max(ground + 3, 1); y <= rMax + 20; y += 4) {
+      if (Math.hypot(x, y) > rMax) { continue; }
+      if (!Core.scanGrasp(g, x, y, 2).length) { continue; }
+      if (x < x0) { x0 = x; }
+      if (x > x1) { x1 = x; }
+      if (y < y0) { y0 = y; }
+      if (y > y1) { y1 = y; }
+    }
+  }
+  if (!isFinite(x0) || x1 <= x0 || y1 <= y0) {
+    return { xMin: -120, xMax: 120, yMin: 0, yMax: 120 };
+  }
+  return {
+    // 四周各放宽 2 mm，免得按 4 mm 步长拟合出来的框正好把预设在边缘上切掉；
+    // 但外边界不能超过 L1+L2（固件 static_assert）
+    xMin: Math.max(Math.ceil(-rMax), Math.floor(x0) - 2),
+    xMax: Math.min(Math.floor(rMax), Math.ceil(x1) + 2),
+    yMin: Math.max(0, Math.floor(y0) - 2),
+    yMax: Math.ceil(y1) + 2
+  };
+}
+
+function suggestPoses() {
+  const g = CFG.geom;
+  const rMax = Core.maxReach(g);
+  const rR = Core.minReachableRadius(g, true);
+  const zero = Core.solveForward(g, -66, -86);
+  const list = [{
+    key: "Home", x: r2(zero.tipX), y: r2(zero.tipY), grip: 0, wrist: 0
+  }];
+  const plan = [
+    ["Reach", 0, 0.8, -40],
+    ["Place", 12, 0.5, -30],
+    ["Carry", 30, 0.55, -40],
+    ["Ready", 45, 0.5, -20],
+    ["Lift", 60, 0.65, -40],
+    ["Retract", 75, 0.45, 0],
+    ["Drop", 85, 0.5, 20]
+  ];
+  plan.forEach(function (p) {
+    const beta = p[1] * RAD;
+    const r = rR + (rMax - rR) * p[2];
+    list.push({
+      key: p[0],
+      x: r2(r * Math.cos(beta)),
+      y: r2(r * Math.sin(beta)),
+      grip: p[3],
+      wrist: 0
+    });
+  });
+  return list;
+}
+
+function renderPoses() {
+  const host = $("#poses");
+  host.innerHTML = "";
+  CFG.poses.forEach(function (p, i) {
+    const scan = scanGraspOK(p.x, p.y);
+    const tipSol = Core.solveXY(CFG.geom, p.x, p.y);
+    const tipHit = poseHits(tipSol.shoulderPercent, tipSol.elbowPercent).length > 0;
+    const best = scan.length ? scan[Math.floor(scan.length / 2)] : null;
+    const ref = best ? best.sol : tipSol;
+    const row = document.createElement("div");
+    row.className = "poseRow" + (i === sel ? " sel" : "");
+
+    const head = document.createElement("div");
+    head.className = "poseHead";
+    const nm = document.createElement("span");
+    nm.className = "poseName";
+    nm.textContent = (i + 1) + " · " + p.key;
+    const info = document.createElement("span");
+    info.className = "poseInfo";
+    info.textContent = "β" + fmt(ref.betaDeg, 0) + "° r" + fmt(ref.r, 1) +
+      (best ? " s" + fmt(best.s, 0) : "");
+    const badge = document.createElement("span");
+    const cls = scan.length ? "ok" : ((tipSol.limited || tipHit) ? "bad" : "warn");
+    badge.className = "badge " + cls;
+    badge.textContent = scan.length ? "命中" : (tipSol.limited ? "越限" : (tipHit ? "干涉" : "钳位"));
+    head.append(nm, info, badge);
+
+    const body = document.createElement("div");
+    body.className = "poseBody";
+    [["x", p.x, 0.1], ["y", p.y, 0.1], ["grip", p.grip, 1], ["wrist", p.wrist, 1]].forEach(function (f) {
+      const lab = document.createElement("label");
+      lab.textContent = f[0] === "grip" ? "夹" : (f[0] === "wrist" ? "腕" : f[0]);
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.step = f[2];
+      inp.value = fmt(f[1], 1);
+      inp.addEventListener("change", function () {
+        const v = parseFloat(inp.value);
+        if (isFinite(v)) {
+          p[f[0]] = v;
+          refresh();
+        }
+      });
+      inp.addEventListener("click", function (ev) { ev.stopPropagation(); });
+      body.append(lab, inp);
+    });
+
+    head.addEventListener("click", function () {
+      sel = i;
+      applyTarget(p.x, p.y, p.grip, p.wrist);
+    });
+    row.append(head, body);
+    host.appendChild(row);
+  });
+  const nHit = document.querySelectorAll(".poseRow .badge.ok").length;
+  $("#metaPose").textContent = nHit + "/" + CFG.poses.length + " 命中";
+  $("#poseHint").textContent =
+    "点名称条 = 解算并把 S3/S4 一起带上；输入框改的是这条的坐标。当前选中：" +
+    (CFG.poses[sel] ? CFG.poses[sel].key : "—");
+}
+
+/* ======================= 交互 ======================= */
+function applyTarget(x, y, grip, wrist) {
+  target = { x: x, y: y };
+  const g = CFG.geom;
+  const fore = Core.foreLength(g);
+  const sCur = Core.clampf(CFG.state.graspMm, 0, jawLen());
+  let sol = Core.solveXYAt(g, x, y, Math.max(Core.MIN_RADIUS_MM, fore - sCur));
+  let sPick = sCur;
+  // 当前夹取点咬不到就沿 46 mm 夹爪线扫一遍，取离当前 s 最近的精确解
+  if (!(sol.reachable && !sol.limited) && jawLen() > 0) {
+    const list = scanGraspOK(x, y);
+    if (list.length) {
+      let best = list[0];
+      for (let i = 1; i < list.length; i++) {
+        if (Math.abs(list[i].s - sCur) < Math.abs(best.s - sCur)) { best = list[i]; }
+      }
+      sPick = best.s;
+      sol = best.sol;
+    }
+  }
+  // 会和底盘/地面干涉的姿态一律不摆（"碰不到"）
+  if (poseHits(sol.shoulderPercent, sol.elbowPercent).length) {
+    refresh();
+    return;
+  }
+  CFG.state.graspMm = r2(sPick);
+  CFG.state.p1 = r2(sol.shoulderPercent);
+  CFG.state.p2 = r2(sol.elbowPercent);
+  if (typeof grip === "number") { CFG.state.p3 = grip; }
+  if (typeof wrist === "number") { CFG.state.p4 = wrist; }
+  syncStateSliders();
+  scheduleBand();
+  refresh();
+}
+
+let onChange = function (geo) {
+  if (geo) { scheduleBand(); }
+  refresh();
+};
+
+function scheduleBand() {
+  if (rafBand) { return; }
+  // 用 setTimeout 而不是 rAF：后台标签页里 rAF 会被完全暂停，
+  // 那种时候改参数画布会一直停在旧掩码上
+  rafBand = setTimeout(function () {
+    rafBand = 0;
+    layout();
+    buildBand();
+    draw();
+    renderDerived();
+    renderChecks();
+  }, 0);
+}
+
+function renderCatMeta() {
+  const g = CFG.geom;
+  const c = CFG.cube;
+  const w = CFG.ws;
+  $("#metaCube").textContent = fmt(c.sizeMm, 0) + " mm · " + fmt(c.massG, 0) + " g · " +
+    (c.held ? "夹住" : "自由");
+  $("#metaGeom").textContent = "L1 " + fmt(g.upperMm, 0) + " · L2Σ " + fmt(Core.foreLength(g), 1) +
+    " · 夹爪 " + fmt(g.jawMm, 0);
+  $("#metaWs").textContent = "x " + fmt(w.xMin, 0) + "~" + fmt(w.xMax, 0) +
+    " · y " + fmt(w.yMin, 0) + "~" + fmt(w.yMax, 0);
+}
+
+function refresh() {
+  syncCube();
+  draw();
+  renderReadout();
+  renderDerived();
+  renderChecks();
+  renderPoses();
+  syncStateSliders();
+  drawCube3D();
+  renderCubeInfo();
+  renderCatMeta();
+  saveCfg();
+}
+
+/* ======================= 导出 / 导入 ======================= */
+function buildJson() {
+  const g = CFG.geom;
+  const d = derived();
+  const payload = {
+    meta: {
+      tool: "mechanical_era/sim/index.html",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      note: "原点 = 臂底座中心（肩轴），+x 前 +y 上；角度与行程百分比与 arm_kinematics.cpp 一致"
+    },
+    chassis: clone(CFG.chassis),
+    geom: {
+      upper_mm: g.upperMm,
+      fore_mm: g.foreMm,
+      tool_mm: g.toolMm,
+      jaw_mm: g.jawMm,
+      fore_total_mm: r2(Core.foreLength(g)),
+      elbow_sign: g.elbowSign,
+      shoulder: {
+        zero_deg: g.shoulder.zeroDeg,
+        deg_per_percent: g.shoulder.degPerPercent,
+        min_deg: g.shoulder.minDeg,
+        max_deg: g.shoulder.maxDeg
+      },
+      elbow: {
+        zero_deg: g.elbow.zeroDeg,
+        deg_per_percent: g.elbow.degPerPercent,
+        min_deg: g.elbow.minDeg,
+        max_deg: g.elbow.maxDeg
+      }
+    },
+    workspace: clone(CFG.ws),
+    motion: clone(CFG.motion),
+    state: clone(CFG.state),
+    cube: clone(CFG.cube),
+    phys: clone(CFG.phys),
+    target: target ? { x: target.x, y: target.y } : null,
+    poses: CFG.poses.map(function (p) {
+      return { key: p.key, x: p.x, y: p.y, gripper_percent: p.grip, wrist_percent: p.wrist };
+    }),
+    derived: {
+      reach_max_mm: r2(d.rMax),
+      r_min_right_mm: r2(d.rR),
+      r_min_left_mm: r2(d.rL)
+    }
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+function exportJson() {
+  download("sim_config.json", buildJson());
+}
+
+function fF(v, n) {
+  let s = (Math.abs(v) < 5e-7 ? 0 : v).toFixed(n == null ? 2 : n);
+  if (s.indexOf(".") >= 0) {
+    s = s.replace(/0+$/, "");
+    if (s.charAt(s.length - 1) === ".") { s += "0"; }
+  }
+  return s + "F";
+}
+
+function exportHpp() {
+  download("arm_config_snippet.hpp", buildHpp(), "text/plain");
+}
+
+function buildHpp() {
+  const g = CFG.geom;
+  const m = CFG.motion;
+  const d = derived();
+  const fore = r2(Core.foreLength(g));
+  const rows = CFG.poses.map(function (p, i) {
+    const scan = scanGraspOK(p.x, p.y);
+    const s = scan.length ? scan[Math.floor(scan.length / 2)].sol : Core.solveXY(g, p.x, p.y);
+    const stxt = scan.length
+      ? "命中 s=" + scan[0].s.toFixed(0) + "~" + scan[scan.length - 1].s.toFixed(0)
+      : "整条夹爪咬不到";
+    const note = p.key + "  β=" + s.betaDeg.toFixed(0) + "° r=" + s.r.toFixed(1) + " " + stxt;
+    return (
+      "    {" + fF(p.x, 1) + ", " + fF(p.y, 1) + ", " + fF(p.grip, 1) + ", " + fF(p.wrist, 1) + "}," +
+      "  // " + note
+    );
+  }).join("\n");
+
+  const bad = selfChecks().filter(function (r) { return !r.ok; });
+  const txt =
+    "/**\n" +
+    " ******************************************************************************\n" +
+    " * @file           : arm_config_snippet.hpp\n" +
+    " * @brief          : 由 sim/index.html 导出的参数（对照粘贴进 Include/arm_config.hpp）\n" +
+    " ******************************************************************************\n" +
+    " *\n" +
+    " * 导出时间：" + new Date().toLocaleString("zh-CN") + "\n" +
+    " * 几何依据：L1 = " + fmt(g.upperMm) + " mm，真实小臂 = " + fmt(g.foreMm) + " + " + fmt(g.toolMm) +
+    " = " + fmt(fore) + " mm\n" +
+    " * 派生量：r_max = " + fmt(d.rMax) + "，r_min 右 " + fmt(d.rR) + " / 左 " + fmt(d.rL) + " mm\n" +
+    " * 夹爪：末端 " + fmt(g.jawMm, 0) + " mm 是夹爪本体，预设坐标与逆解目标是**夹取点**（可在该段内取）\n" +
+    (CFG.ws.xMin <= 0
+      ? " * @warning 工作区跨肩轴（x_min = " + fmt(CFG.ws.xMin, 1) +
+        "）：arm_config.hpp 的 static_assert(x_min > 0) 要一起放开（斜坡方案）\n"
+      : "") +
+    " *\n" +
+    " * @note fore_mm 已按「腕点连杆 + 工具延伸」合并，粘进去就不用再拆工具段。\n" +
+    " * @note 预设是仿真占位值，实物工位定了要重标（见 README §7.1）。\n" +
+    (bad.length
+      ? " * @warning 自检未过：" + bad.map(function (r) { return r.t; }).join("；") + "\n"
+      : " * @note 自检全部通过（含 slew 4 倍余量、zero = 行程中点）。\n") +
+    " */\n\n" +
+    "constexpr arm_kinematics::Model kGeom = {\n" +
+    "    " + fF(g.upperMm) + ", " + fF(fore) + ",  // L1 大臂 / L2 小臂（= " +
+    fmt(g.foreMm) + " + " + fmt(g.toolMm) + "）\n" +
+    "    {" + fF(g.shoulder.zeroDeg, 1) + ", " + fF(g.shoulder.degPerPercent, 3) + ", " +
+    fF(g.shoulder.minDeg, 1) + ", " + fF(g.shoulder.maxDeg, 1) + "},  // shoulder: zero / deg% / min / max\n" +
+    "    {" + fF(g.elbow.zeroDeg, 1) + ", " + fF(g.elbow.degPerPercent, 3) + ", " +
+    fF(g.elbow.minDeg, 1) + ", " + fF(g.elbow.maxDeg, 1) + "},  // elbow\n" +
+    "    " + (g.elbowSign > 0 ? "+1" : "-1") + ",  // elbow_sign\n" +
+    "};\n\n" +
+    "constexpr Workspace kWorkspace = {" +
+    fF(CFG.ws.xMin, 1) + ", " + fF(CFG.ws.xMax, 1) + ", " +
+    fF(CFG.ws.yMin, 1) + ", " + fF(CFG.ws.yMax, 1) + "};\n\n" +
+    "constexpr Motion kMotion = {\n" +
+    "    " + fF(m.cartSpeed, 1) + ", " + fF(m.slew, 1) + ", " + fF(m.settle, 1) + ", " +
+    fF(m.sag, 2) + ", " + Math.round(m.maxElapsedMs) + "U, {" +
+    m.jog.map(function (v) { return Math.round(v); }).join(", ") + "},\n" +
+    "};\n\n" +
+    "constexpr Preset kPoses[8] = {\n" +
+    rows + "\n" +
+    "};\n";
+
+  return txt;
+}
+
+function mergeCfg(obj) {
+  if (!obj || typeof obj !== "object") { return false; }
+  if (obj.chassis) { CFG.chassis = Object.assign(CFG.chassis, obj.chassis); }
+  if (obj.geom) {
+    const src = obj.geom;
+    if (typeof src.upper_mm === "number") { CFG.geom.upperMm = src.upper_mm; }
+    if (typeof src.fore_mm === "number") { CFG.geom.foreMm = src.fore_mm; }
+    if (typeof src.tool_mm === "number") { CFG.geom.toolMm = src.tool_mm; }
+    if (typeof src.jaw_mm === "number") { CFG.geom.jawMm = src.jaw_mm; }
+    if (typeof src.elbow_sign === "number") { CFG.geom.elbowSign = src.elbow_sign; }
+    ;["shoulder", "elbow"].forEach(function (k) {
+      if (src[k]) {
+        const t = CFG.geom[k];
+        if (typeof src[k].zero_deg === "number") { t.zeroDeg = src[k].zero_deg; }
+        if (typeof src[k].deg_per_percent === "number") { t.degPerPercent = src[k].deg_per_percent; }
+        if (typeof src[k].min_deg === "number") { t.minDeg = src[k].min_deg; }
+        if (typeof src[k].max_deg === "number") { t.maxDeg = src[k].max_deg; }
+      }
+    });
+  }
+  if (obj.workspace) {
+    ["xMin", "xMax", "yMin", "yMax"].forEach(function (k) {
+      if (typeof obj.workspace[k] === "number") { CFG.ws[k] = obj.workspace[k]; }
+    });
+  }
+  if (obj.motion) {
+    ["cartSpeed", "slew", "settle", "sag", "maxElapsedMs"].forEach(function (k) {
+      if (typeof obj.motion[k] === "number") { CFG.motion[k] = obj.motion[k]; }
+    });
+    if (Array.isArray(obj.motion.jog)) { CFG.motion.jog = obj.motion.jog.slice(0, 4); }
+  }
+  if (obj.cube) {
+    ["sizeMm", "massG", "x", "y", "yawDeg", "rollDeg"].forEach(function (k) {
+      if (typeof obj.cube[k] === "number") { CFG.cube[k] = obj.cube[k]; }
+    });
+    if (typeof obj.cube.held === "boolean") { CFG.cube.held = obj.cube.held; }
+  }
+  if (obj.phys) {
+    ["gravity", "arm1G", "arm2G", "tau1KgCm", "tau2KgCm", "mu", "jawForceN", "maxOpenMm"]
+      .forEach(function (k) {
+        if (typeof obj.phys[k] === "number") { CFG.phys[k] = obj.phys[k]; }
+      });
+  }
+  if (obj.state) {
+    ["p1", "p2", "p3", "p4"].forEach(function (k) {
+      if (typeof obj.state[k] === "number") { CFG.state[k] = obj.state[k]; }
+    });
+    if (typeof obj.state.graspMm === "number") { CFG.state.graspMm = obj.state.graspMm; }
+  }
+  if (Array.isArray(obj.poses) && obj.poses.length) {
+    CFG.poses = obj.poses.slice(0, 8).map(function (p, i) {
+      return {
+        key: p.key || ("P" + i),
+        x: p.x,
+        y: p.y,
+        grip: typeof p.gripper_percent === "number" ? p.gripper_percent : (p.grip || 0),
+        wrist: typeof p.wrist_percent === "number" ? p.wrist_percent : (p.wrist || 0)
+      };
+    });
+  }
+  return true;
+}
+
+/* ======================= 持久化 ======================= */
+const LS_KEY = "mech_era_arm_sim_v1";
+function saveCfg() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      chassis: CFG.chassis, geom: CFG.geom, ws: CFG.ws,
+      motion: CFG.motion, state: CFG.state, poses: CFG.poses,
+      cube: CFG.cube, phys: CFG.phys
+    }));
+  } catch (e) { /* file:// 下不可用就算了 */ }
+}
+function loadCfg() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) { return false; }
+    const obj = JSON.parse(raw);
+    if (!obj.geom) { return false; }
+    return mergeCfg(obj);
+  } catch (e) { return false; }
+}
+
+/* ======================= 初始化 ======================= */
+function bindEvents() {
+  const canvasMove = function (ev) {
+    if (ev.buttons !== 1 && ev.type === "pointermove") { return; }
+    const w = toWorld(ev.clientX, ev.clientY);
+    applyTarget(w.x, w.y);
+  };
+  cvs.addEventListener("pointerdown", function (ev) {
+    cvs.setPointerCapture(ev.pointerId);
+    canvasMove(ev);
+  });
+  cvs.addEventListener("pointermove", canvasMove);
+
+  ["optBand", "optGrid", "optWs", "optDims"].forEach(function (id) {
+    $("#" + id).addEventListener("change", function () { refresh(); });
+  });
+
+  $("#r1").addEventListener("input", function () {
+    CFG.state.p1 = parseFloat(this.value); syncStateSliders(); refresh();
+  });
+  $("#r2").addEventListener("input", function () {
+    CFG.state.p2 = parseFloat(this.value); syncStateSliders(); refresh();
+  });
+  $("#r3").addEventListener("input", function () {
+    CFG.state.p3 = parseFloat(this.value);
+    // 张开到比物块宽就掉下来
+    if (CFG.cube.held && CFG.state.p3 >= 0) {
+      releaseCube("夹爪张开，物块掉落");
+      return;
+    }
+    syncStateSliders();
+    refresh();
+  });
+  $("#r4").addEventListener("input", function () {
+    CFG.state.p4 = parseFloat(this.value); syncStateSliders(); refresh();
+  });
+  $("#r5").addEventListener("input", function () {
+    CFG.state.graspMm = parseFloat(this.value);
+    // 只改夹取点在夹爪上的位置，姿态不动 → 夹取点沿夹爪线滑动
+    syncStateSliders();
+    refresh();
+  });
+
+  $("#btnGo").addEventListener("click", function () {
+    const x = parseFloat($("#tx").value);
+    const y = parseFloat($("#ty").value);
+    if (isFinite(x) && isFinite(y)) { applyTarget(x, y); }
+  });
+  $("#btnZero").addEventListener("click", function () {
+    CFG.state.p1 = -66;
+    CFG.state.p2 = -86;
+    syncStateSliders();
+    refresh();
+  });
+  $("#btnClear").addEventListener("click", function () {
+    target = null;
+    syncStateSliders();
+    refresh();
+  });
+
+  $("#btnGen").addEventListener("click", function () {
+    CFG.poses = suggestPoses();
+    sel = 0;
+    refresh();
+  });
+  $("#btnFw").addEventListener("click", function () {
+    CFG.poses = FW_POSES.map(function (p) { return Object.assign({}, p); });
+    sel = 0;
+    refresh();
+  });
+  $("#btnSavePose").addEventListener("click", function () {
+    const pp = poseParts();
+    CFG.poses[sel].x = r2(pp.graspX);
+    CFG.poses[sel].y = r2(pp.graspY);
+    CFG.poses[sel].grip = CFG.state.p3;
+    CFG.poses[sel].wrist = CFG.state.p4;
+    refresh();
+  });
+
+  $("#btnJson").addEventListener("click", exportJson);
+  $("#btnHpp").addEventListener("click", exportHpp);
+  $("#btnGrab").addEventListener("click", grabCube);
+  $("#btnRelease").addEventListener("click", function () { releaseCube(); });
+  $("#btnResetCube").addEventListener("click", resetCube);
+  $("#btnImport").addEventListener("click", function () { $("#fileIn").click(); });
+  $("#fileIn").addEventListener("change", function (ev) {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) { return; }
+    const fr = new FileReader();
+    fr.onload = function () {
+      try {
+        const obj = JSON.parse(String(fr.result));
+        if (mergeCfg(obj)) {
+          syncInputs();
+          layout();
+          buildBand();
+          refresh();
+        }
+      } catch (e) {
+        alert("JSON 解析失败：" + e.message);
+      }
+    };
+    fr.readAsText(f);
+    ev.target.value = "";
+  });
+
+  $("#btnReset").addEventListener("click", function () {
+    CFG = clone(DEFAULT_CFG);
+    CFG.ws = fitWorkspaceRect();
+    CFG.poses = suggestPoses();
+    target = null;
+    sel = 0;
+    syncInputs();
+    layout();
+    buildBand();
+    refresh();
+  });
+
+  let rz = 0;
+  window.addEventListener("resize", function () {
+    clearTimeout(rz);
+    rz = setTimeout(function () {
+      layout();
+      buildBand();
+      refresh();
+    }, 120);
+  });
+}
+
+function init() {
+  cvs = $("#cv");
+  ctx = cvs.getContext("2d");
+  loadCfg();
+  if (!CFG.poses.length) { CFG.poses = suggestPoses(); }
+  if (!(CFG.ws.xMax > CFG.ws.xMin)) { CFG.ws = fitWorkspaceRect(); }
+  buildSections();
+  syncInputs();
+  layout();
+  buildBand();
+  bindEvents();
+  refresh();
+}
+
+init();
+
+// 调试/验证钩子：给 sim/verify 与手工排查用，不影响 UI
+window.__sim = {
+  core: Core,
+  cfg: function () { return CFG; },
+  target: function () { return target; },
+  buildJson: buildJson,
+  buildHpp: buildHpp,
+  applyTarget: applyTarget,
+  sample: function (x, y) {
+    const p = P(x, y);
+    const d = ctx.getImageData(Math.round(p.x * dpr), Math.round(p.y * dpr), 1, 1).data;
+    return [d[0], d[1], d[2]];
+  },
+  viewInfo: function () {
+    return { ox: view.ox, S: view.S, W: view.W, H: view.H, x0: view.x0, y1: view.y1, ground: view.ground };
+  },
+  classAt: function (x, y) {
+    if (!envCache.cls) { return -1; }
+    const i = Math.round((view.ox + (x - view.x0) * view.S) / 2 - 0.5);
+    const j = Math.round(((view.y1 - y) * view.S) / 2 - 0.5);
+    if (i < 0 || j < 0 || i >= envCache.iw || j >= envCache.ih) { return -1; }
+    return envCache.cls[j * envCache.iw + i];
+  },
+  load: function (obj) {
+    if (mergeCfg(obj)) {
+      syncInputs();
+      layout();
+      buildBand();
+      refresh();
+    }
+  }
+};
+})();
+</script>
+</body>
+</html>

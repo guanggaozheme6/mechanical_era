@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>位置 → 角度：B 方案解算全过程（动态）</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#101823; --line:#1f2b3a; --text:#dbe6f3; --dim:#7d8fa6;
+    --a:#f5a524; --m:#22d3ee; --ok:#5bd98a; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:radial-gradient(1200px 600px at 25% -10%,#132033 0%,var(--bg) 62%);
+    color:var(--text);font:14px/1.65 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{padding:20px 26px 4px;max-width:1520px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 6px;font-weight:600;letter-spacing:.3px}
+  .sub{color:var(--dim);font-size:12.5px;line-height:1.9}
+  .sub code{color:#a9bdd6;background:#131d2a;padding:1px 5px;border-radius:4px;font-size:12px}
+  main{display:grid;grid-template-columns:minmax(420px,1fr) 430px;gap:18px;
+       padding:12px 22px 16px;max-width:1520px;margin:0 auto;align-items:start}
+  @media (max-width:1080px){main{grid-template-columns:1fr}}
+  .stage{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;
+         box-shadow:0 12px 30px -18px #000;position:relative}
+  canvas{width:100%;display:block;border-radius:9px;background:#070b11;cursor:crosshair;touch-action:none}
+  .hint{position:absolute;left:22px;bottom:20px;font-size:11.5px;color:#7d8fa6;
+        background:#0b1119cc;padding:3px 8px;border-radius:6px;border:1px solid #1a2534}
+  aside{display:flex;flex-direction:column;gap:8px}
+  .step{background:var(--panel);border:1px solid var(--line);border-left:3px solid #21304a;
+        border-radius:9px;padding:9px 12px;transition:.18s;opacity:.55}
+  .step.on{opacity:1;border-left-color:var(--a);background:#131d2b}
+  .step.now{opacity:1;border-left-color:var(--a);background:#172335;box-shadow:0 0 0 1px #f5a52444 inset}
+  .step .t{font-size:12.5px;color:#c7d6e8;font-weight:600;display:flex;justify-content:space-between;gap:8px}
+  .step .t span{color:var(--dim);font-weight:400;font-size:11px}
+  .step .f{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:#8fa6c0;margin-top:3px;
+           line-height:1.75;word-break:break-word}
+  .step .r{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--a);margin-top:2px}
+  .step .r em{color:#e8eef7;font-style:normal}
+  .dead{color:#5a6a7d;text-decoration:line-through;text-decoration-color:#3a4a5d}
+  .bar{display:flex;gap:10px;align-items:center;padding:0 22px 30px;max-width:1520px;margin:0 auto;
+       flex-wrap:wrap}
+  button{background:#16202e;color:#cfe0f2;border:1px solid #26374b;border-radius:8px;padding:7px 14px;
+         font-size:12.5px;cursor:pointer;font-family:inherit;transition:.15s}
+  button:hover{background:#1d2b3d;border-color:#34495f}
+  button.pri{background:#f5a52422;border-color:#f5a52477;color:#f5a524}
+  button.pri:hover{background:#f5a52433}
+  label.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--dim);cursor:pointer;
+            user-select:none}
+  input[type=checkbox]{accent-color:var(--m);width:14px;height:14px}
+  .tag{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--dim);
+       background:#0b1119;border:1px solid #1a2534;border-radius:6px;padding:5px 10px}
+  .tag b{color:#cfe0f2;font-weight:600}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>位置 → 角度：B 方案的解算过程（点一下 / 拖一下，数字和几何一起变）</h1>
+  <div class="sub">
+    B 方案参数：<code>L1 = 76.00</code>、<code>L2 = 40.08</code>　
+    大臂 <code>θ1 ∈ [0°,180°]</code>，zero = 90°（竖直）　
+    小臂 <code>θ2 ∈ [−45°,+135°]</code>，zero = 45°（半折，行程中点）　
+    <code>0.9°/1%</code>　
+    固件限速 <code>300 %/s</code><br>
+    选支：两支镜像解里<b>永远取肘点更高的一支</b>（上吊构型）⇒ 目标在右半平面取 <code>θ2 = −acos</code>、左半平面取 <code>+acos</code>，左右构型关于 +y 轴镜像。
+  </div>
+</header>
+
+<main>
+  <div class="stage">
+    <canvas id="cv"></canvas>
+    <div class="hint">拖动橙色准星，或点画布任意位置</div>
+  </div>
+  <aside id="steps"></aside>
+</main>
+
+<div class="bar">
+  <button class="pri" id="play">▶ 逐步推导</button>
+  <button id="reset">↺ 重置</button>
+  <label class="chk"><input type="checkbox" id="mirror"> 看另一支（低肘，非上吊）</label>
+  <span class="tag">解算：<b id="out">—</b>　│　实际：<b id="cur">—</b></span>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- 参数（和 arm_config.hpp 的 A 方案一一对应） ---------- */
+const L1 = 76.0, L2 = 40.08;
+const RAD = Math.PI/180, DEG = 180/Math.PI;
+const T1MIN = 0,   T1MAX = 180;      // 大臂角度限位
+const T2MIN = -45, T2MAX = 135;      // 小臂角度限位（B：前超伸 45° / 后折叠 135°）
+const Z1 = 90, Z2 = 45, DPP = 0.9;   // zero_deg / deg_per_percent（Z2 必须是 (−45+135)/2）
+const SLEW = 300;                     // %/s
+const R_GEO_MIN = Math.abs(L1-L2), R_MAX = L1+L2;
+// 内半径由限位反推，而且左右两侧不一样：右半平面只能吃 θ2 的负支（|T2MIN|），
+// 左半平面吃正支（T2MAX）。对称限位时两者相同。
+const rOf = t => Math.sqrt(L1*L1 + L2*L2 + 2*L1*L2*Math.cos(t*Math.PI/180));
+const rminSide = x => {
+  let t = x >= 0 ? Math.abs(T2MIN) : T2MAX;
+  if (t > 180) t = 360 - t;
+  return Math.max(rOf(t), Math.abs(L1-L2));
+};
+const R_MIN = rminSide(1);          // 右半平面内半径（参考圈用）
+const R_MIN_L = rminSide(-1);       // 左半平面内半径
+
+const VIEW = { x0:-128, x1:128, y0:-58, y1:134 };
+
+/* ---------- 解算：与 arm_kinematics.cpp 同一个算法 ---------- */
+function solve(x, y) {
+  const r = Math.hypot(x, y);
+  let tx = x, ty = y, clamped = false;
+
+  // ① 圆环钳位：外边界 L1+L2，内边界 = 限位允许的最小半径（A: √(L1²+L2²)）
+  //    越界不拒绝，沿方位缩/放到边界上，解出来的就是"出界那一刻的边界值"。
+  const rlo = rminSide(x);
+  if (r > R_MAX) { const s = R_MAX/r; tx = x*s; ty = y*s; clamped = true; }
+  else if (r < rlo) {
+    if (r < 1e-3) { tx = rlo; ty = 0; }
+    else { const s = rlo/r; tx = x*s; ty = y*s; }
+    clamped = true;
+  }
+
+  const rr = Math.hypot(tx, ty);
+  const cRaw = (rr*rr - L1*L1 - L2*L2) / (2*L1*L2);
+  const c = Math.max(-1, Math.min(1, cRaw));       // 必须钳，否则 acos 出 NaN
+  const a = Math.acos(c) * DEG;
+  // 两支共用 |θ2|=a 和同一个修正角 α，差别只在符号：
+  //   θ2=+a ⇒ θ1=β−α      θ2=−a ⇒ θ1=β+α
+  const alpha = Math.atan2(L2*Math.sin(a*RAD), L1 + L2*Math.cos(a*RAD)) * DEG;
+  const beta = Math.atan2(ty, tx) * DEG;
+
+  const EPS = 1e-6;
+  const mk = t2 => {
+    let t1 = beta + (t2 >= 0 ? -alpha : alpha);
+    t1 = ((t1 + 180) % 360 + 360) % 360 - 180;
+    const limT1 = t1 < T1MIN-EPS || t1 > T1MAX+EPS;
+    const limT2 = t2 < T2MIN-EPS || t2 > T2MAX+EPS;
+    return { t2, alpha: (t2 >= 0 ? alpha : -alpha), t1, ok: !limT1 && !limT2, limT1, limT2 };
+  };
+  const sols = [mk(+a), mk(-a)];
+
+  // 选支：永远取"肘点更高"的那一支（上吊构型）。
+  // sin(β+α) − sin(β−α) = 2·cosβ·sinα，cosβ 与 tx 同号 ⇒ θ2 的符号与 tx 相反。
+  const pick = (tx >= 0) ? 1 : 0;
+
+  return { x, y, r, tx, ty, rr, cRaw, c, a, alpha, beta, clamped, sols, pick };
+}
+
+/* ---------- DOM ---------- */
+const canvas = document.getElementById("cv");
+const ctx = canvas.getContext("2d");
+const stepsEl = document.getElementById("steps");
+const outEl = document.getElementById("out");
+const curEl = document.getElementById("cur");
+const playBtn = document.getElementById("play");
+const resetBtn = document.getElementById("reset");
+const mirrorChk = document.getElementById("mirror");
+
+let S = 1, W = 0, H = 0, dpr = 1;
+const P = (x, y) => ({ x: (x - VIEW.x0) * S, y: (VIEW.y1 - y) * S });
+
+/* 状态 */
+const st = {
+  target: { x: 88, y: 42 },
+  step: 8,          // 0..8，8 = 全部展开
+  mirror: false,
+  cur: { p1: 0, p2: 0 },   // 当前下发的行程百分比（固件里的 current）
+  goal: null               // 解算出的目标百分比
+};
+
+/* ---------- 静态层：网格 + A 方案可达域 ---------- */
+let staticLayer = null;
+
+function buildStatic() {
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr);
+  const c = cv.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = "#070b11"; c.fillRect(0, 0, W, H);
+
+  // 网格 20mm
+  for (let gx = -120; gx <= 120; gx += 20) {
+    const p = P(gx, 0);
+    c.strokeStyle = gx === 0 ? "#243244" : "#101820";
+    c.beginPath(); c.moveTo(p.x, 0); c.lineTo(p.x, H); c.stroke();
+  }
+  for (let gy = -40; gy <= 120; gy += 20) {
+    const p = P(0, gy);
+    c.strokeStyle = gy === 0 ? "#243244" : "#101820";
+    c.beginPath(); c.moveTo(0, p.y); c.lineTo(W, p.y); c.stroke();
+  }
+  // 刻度
+  c.fillStyle = "#33475e"; c.font = "10px ui-monospace,Consolas,monospace";
+  for (let gx = -100; gx <= 100; gx += 50) {
+    if (!gx) continue;
+    const p = P(gx, 0); c.textAlign = "center"; c.fillText(gx, p.x, P(0,0).y + 14);
+  }
+  for (let gy = -40; gy <= 120; gy += 50) {
+    if (!gy) continue;
+    const p = P(0, gy); c.textAlign = "right"; c.fillText(gy, P(0,0).x - 6, p.y + 3);
+  }
+  c.textAlign = "left";
+
+  // 逐像素可达判定（A 方案）
+  const IW = Math.ceil(W), IH = Math.ceil(H);
+  const mask = new Uint8Array(IW*IH);
+  for (let py = 0; py < IH; py++) {
+    const wy = VIEW.y1 - (py + 0.5)/S;
+    for (let px = 0; px < IW; px++) {
+      const wx = VIEW.x0 + (px + 0.5)/S;
+      if (okA(wx, wy)) mask[py*IW + px] = 1;
+    }
+  }
+  const tmp = document.createElement("canvas");
+  tmp.width = IW; tmp.height = IH;
+  const tc = tmp.getContext("2d");
+  const img = tc.createImageData(IW, IH), d = img.data;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const px = i % IW, py = (i/IW)|0;
+    const edge = px===0||py===0||px===IW-1||py===IH-1||!mask[i-1]||!mask[i+1]||!mask[i-IW]||!mask[i+IW];
+    const o = i*4;
+    d[o]=245; d[o+1]=165; d[o+2]=36; d[o+3] = edge ? 165 : 30;
+  }
+  tc.putImageData(img, 0, 0);
+  c.drawImage(tmp, 0, 0, W, H);
+
+  // 两个极限半径参考圈
+  c.setLineDash([3,6]); c.lineWidth = 1;
+  c.strokeStyle = "#f5a5242e";
+  [R_MIN, R_MIN_L, R_MAX].forEach(rad => {
+    c.beginPath();
+    for (let i = 0; i <= 120; i++) {
+      const ang = i/120*Math.PI*2;
+      const p = P(rad*Math.cos(ang), rad*Math.sin(ang));
+      i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y);
+    }
+    c.stroke();
+  });
+  c.setLineDash([]);
+
+  return cv;
+}
+
+/* 快速可达判定（给填充用，每像素调一次，不分配对象） */
+function okA(x, y) {
+  const r = Math.hypot(x, y);
+  if (r > R_MAX + 1e-9 || r < rminSide(x) - 1e-9) return false;
+  const c = Math.max(-1, Math.min(1, (r*r - L1*L1 - L2*L2)/(2*L1*L2)));
+  const a = Math.acos(c)*DEG;
+  const al = Math.atan2(L2*Math.sin(a*RAD), L1 + L2*Math.cos(a*RAD))*DEG;
+  const th = Math.atan2(y, x)*DEG;
+  // 只认"选中的那一支"：肘更高的一支（θ2 符号与 x 相反）
+  const t2 = (x >= 0) ? -a : a;
+  if (t2 < T2MIN - 1e-9 || t2 > T2MAX + 1e-9) return false;
+  const t1 = ((th - (t2 >= 0 ? al : -al) + 180) % 360 + 360) % 360 - 180;
+  return t1 >= T1MIN - 1e-9 && t1 <= T1MAX + 1e-9;
+}
+
+/* ---------- 绘制 ---------- */
+function arcAng(cx, cy, rad, a0, a1, color, lw, dash) {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = "round";
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath();
+  const n = Math.max(8, Math.abs(a1-a0)|0);
+  for (let i = 0; i <= n; i++) {
+    const a = (a0 + (a1-a0)*i/n) * RAD;
+    const p = P(cx + rad*Math.cos(a), cy + rad*Math.sin(a));
+    i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function line(x1, y1, x2, y2, color, lw, dash) {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = "round";
+  if (dash) ctx.setLineDash(dash);
+  const a = P(x1,y1), b = P(x2,y2);
+  ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+  ctx.restore();
+}
+
+function dot(x, y, r, fill, stroke, lw) {
+  const p = P(x, y);
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7);
+  ctx.fillStyle = fill; ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2.5; ctx.stroke(); }
+}
+
+function textAt(str, x, y, color, font, align, bg) {
+  const p = P(x, y);
+  ctx.font = font || "11.5px ui-monospace,Consolas,monospace";
+  if (bg) {
+    const w = ctx.measureText(str).width;
+    ctx.fillStyle = "#070b11e0";
+    const ox = align === "right" ? p.x - w - 6 : (align === "center" ? p.x - w/2 - 4 : p.x - 4);
+    ctx.fillRect(ox, p.y - 12, w + 8, 16);
+  }
+  ctx.fillStyle = color; ctx.textAlign = align || "left";
+  ctx.fillText(str, p.x, p.y);
+  ctx.textAlign = "left";
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (staticLayer) ctx.drawImage(staticLayer, 0, 0, W, H);
+
+  const s = solve(st.target.x, st.target.y);
+  const sol = s.sols[st.mirror ? 1 - s.pick : s.pick];
+  const oth = s.sols[st.mirror ? s.pick : 1 - s.pick];
+  const step = st.step;
+
+  /* 当前固件姿态（白色，带 slew 动画） */
+  const a1c = Z1 + st.cur.p1*DPP, a2c = Z2 + st.cur.p2*DPP;
+  const ec = { x: L1*Math.cos(a1c*RAD), y: L1*Math.sin(a1c*RAD) };
+  const wc = { x: ec.x + L2*Math.cos((a1c+a2c)*RAD), y: ec.y + L2*Math.sin((a1c+a2c)*RAD) };
+
+  /* ① 目标点 */
+  if (step >= 1) {
+    const t = P(st.target.x, st.target.y);
+    const ok = sol.ok;
+    ctx.save();
+    ctx.strokeStyle = ok ? "#f5a524" : "#ff6b6b";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(t.x-9, t.y); ctx.lineTo(t.x+9, t.y);
+    ctx.moveTo(t.x, t.y-9); ctx.lineTo(t.x, t.y+9);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(t.x, t.y, 13, 0, 7); ctx.stroke();
+    ctx.restore();
+    textAt(`P (${st.target.x.toFixed(1)}, ${st.target.y.toFixed(1)})${s.clamped ? " 钳位" : ""}`,
+           st.target.x + 8, st.target.y - 14, ok ? "#f5a524" : "#ff6b6b", null, "left", true);
+  }
+
+  /* ③ 钳位后的解算点 */
+  if (s.clamped && step >= 3) {
+    line(st.target.x, st.target.y, s.tx, s.ty, "#ff6b6b88", 1.4, [4,4]);
+    dot(s.tx, s.ty, 4, "#ff6b6b", "#070b11", 2);
+    textAt(`钳位到 r=${s.rr.toFixed(1)}`, s.tx + 8, s.ty + 16, "#ff6b6b", null, "left", true);
+  }
+
+  const tx = s.tx, ty = s.ty;
+
+  /* ② r 线段 */
+  if (step >= 2) {
+    line(0, 0, tx, ty, "#8fa6c088", 1.6, [6,5]);
+    const mx = tx*0.55, my = ty*0.55;
+    textAt(`r = ${s.rr.toFixed(2)}`, mx + (ty>0?-4:4), my + (ty>0?-8:16), "#93a6bd", null, "center", true);
+  }
+
+  /* ⑤ β */
+  if (step >= 5) {
+    arcAng(0, 0, 40, 0, s.beta, "#9fb4cc", 1.8);
+    textAt(`β ${s.beta.toFixed(1)}°`, 52*Math.cos(s.beta*RAD), 52*Math.sin(s.beta*RAD) + 4,
+           "#9fb4cc", null, "center", true);
+  }
+
+  /* ④ 三角形 O-E-P（选中的解） */
+  if (step >= 4 && sol.ok) {
+    const e = { x: L1*Math.cos(sol.t1*RAD), y: L1*Math.sin(sol.t1*RAD) };
+    line(0, 0, e.x, e.y, "#f5a52455", 2.2, [5,4]);
+    line(e.x, e.y, tx, ty, "#f5a52455", 2.2, [5,4]);
+    textAt(`L1`, e.x*0.5 - 12, e.y*0.5 - 6, "#f5a524aa", null, "center", true);
+    textAt(`L2`, (e.x+tx)/2 + 12, (e.y+ty)/2 - 6, "#f5a524aa", null, "center", true);
+  }
+
+  /* ④ 镜像解（另一支） */
+  if (step >= 4 && oth.ok) {
+    const e2 = { x: L1*Math.cos(oth.t1*RAD), y: L1*Math.sin(oth.t1*RAD) };
+    line(0, 0, e2.x, e2.y, "#22d3ee55", 2, [4,5]);
+    line(e2.x, e2.y, tx, ty, "#22d3ee55", 2, [4,5]);
+    dot(e2.x, e2.y, 3.5, "#22d3ee", null);
+    textAt(`镜像解 θ1=${oth.t1.toFixed(1)}° θ2=${oth.t2.toFixed(1)}°`,
+           e2.x, e2.y - 12, "#22d3eeaa", "10.5px ui-monospace,Consolas,monospace", "center", true);
+  }
+
+  /* ⑥ α（O 点，OE 与 OP 的夹角） */
+  if (step >= 6 && sol.ok) {
+    arcAng(0, 0, 30, Math.min(sol.t1, s.beta), Math.max(sol.t1, s.beta), "#8fa6c0aa", 1.6);
+    textAt(`α ${Math.abs(sol.alpha).toFixed(1)}°`, 64*Math.cos(sol.t1*RAD), 64*Math.sin(sol.t1*RAD) + 4,
+           "#8fa6c0", null, "center", true);
+  }
+
+  /* ⑦ θ2 弧（肘点） */
+  if (step >= 4 && sol.ok) {
+    const e = { x: L1*Math.cos(sol.t1*RAD), y: L1*Math.sin(sol.t1*RAD) };
+    arcAng(e.x, e.y, 22, sol.t1, sol.t1 + sol.t2, "#f5a524", 2.2);
+    const mid = (sol.t1 + sol.t2/2)*RAD;
+    textAt(`θ2 ${sol.t2.toFixed(1)}°`, e.x + 30*Math.cos(mid), e.y + 30*Math.sin(mid) + 4,
+           "#f5a524", null, "center", true);
+  }
+
+  /* ⑦ θ1 弧（肩点） */
+  if (step >= 7 && sol.ok) {
+    arcAng(0, 0, 20, 0, sol.t1, "#f5a524cc", 1.8);
+    const mid = sol.t1/2*RAD;
+    textAt(`θ1 ${sol.t1.toFixed(1)}°`, 26*Math.cos(mid), 26*Math.sin(mid) - 6,
+           "#f5a524", null, "center", true);
+  }
+
+  /* 解算臂（橙色实线） */
+  if (step >= 7 && sol.ok) {
+    const e = { x: L1*Math.cos(sol.t1*RAD), y: L1*Math.sin(sol.t1*RAD) };
+    line(0, 0, e.x, e.y, "#f5a524", 5);
+    line(e.x, e.y, tx, ty, "#f5a524", 4);
+    dot(e.x, e.y, 4.5, "#070b11", "#f5a524", 2.5);
+  }
+
+  /* 当前固件姿态（白色）—— 和解算结果重合时就不画，免得盖住橙色 */
+  const eS0 = sol.ok ? { x: L1*Math.cos(sol.t1*RAD), y: L1*Math.sin(sol.t1*RAD) } : null;
+  if (!eS0 || Math.hypot(ec.x - eS0.x, ec.y - eS0.y) > 1.2) {
+    line(0, 0, ec.x, ec.y, "#e8eef7cc", 5);
+    line(ec.x, ec.y, wc.x, wc.y, "#e8eef7aa", 4);
+    dot(ec.x, ec.y, 4, "#070b11", "#e8eef7", 2);
+    dot(wc.x, wc.y, 5, "#070b11", "#e8eef7", 2.5);
+  }
+  dot(0, 0, 5.5, "#070b11", "#9fb4cc", 2.5);
+  textAt("O(0,0)", 8, -8, "#8fa6c0", "11px ui-monospace,Consolas,monospace", "left", true);
+  // 只在"实际姿态"和"解算结果"还没重合时标注，免得两个标签叠在一起
+  const eS = sol.ok ? { x: L1*Math.cos(sol.t1*RAD), y: L1*Math.sin(sol.t1*RAD) } : null;
+  if (eS && Math.hypot(ec.x - eS.x, ec.y - eS.y) > 3) {
+    textAt("当前 E", ec.x, ec.y - 14, "#e8eef799", "10.5px ui-monospace,Consolas,monospace", "center", true);
+  }
+}
+
+/* ---------- 步骤卡片 ---------- */
+const STEP_TITLES = [
+  "① 读入目标点", "② 求半径 r", "③ 圆环与钳位", "④ 余弦定理求 θ2",
+  "⑤ 求方位角 β", "⑥ 求修正角 α", "⑦ θ1 = β − α", "⑧ 角度 → 百分比 → 脉宽"
+];
+
+function renderSteps() {
+  const s = solve(st.target.x, st.target.y);
+  const sol = s.sols[st.mirror ? 1 - s.pick : s.pick];
+  const oth = s.sols[st.mirror ? s.pick : 1 - s.pick];
+
+  const p1 = (sol.t1 - Z1)/DPP, p2 = (sol.t2 - Z2)/DPP;
+  const us1 = 1500 + 1000*p1/100, us2 = 1500 + 1000*p2/100;
+
+  const rows = [
+    ["① 读入目标点",
+      `P = (${st.target.x.toFixed(2)}, ${st.target.y.toFixed(2)})　单位 mm，原点在肩轴`,
+      `x = ${st.target.x.toFixed(2)}<em> </em>y = ${st.target.y.toFixed(2)}`],
+
+    ["② 求半径 r",
+      `r = √(x² + y²) = √(${st.target.x.toFixed(1)}² + ${st.target.y.toFixed(1)}²)`,
+      `r = <em>${s.r.toFixed(2)}</em> mm`],
+
+    ["③ 圆环与钳位",
+      `可控半径（本侧）：${rminSide(s.tx).toFixed(2)} ≤ r ≤ ${R_MAX.toFixed(2)}` +
+      `（内边界由 θ2 的 [${T2MIN}°,${T2MAX}°] 限位定，不是 |L1−L2|=${Math.abs(L1-L2).toFixed(2)}；` +
+      `右半平面 ${R_MIN.toFixed(2)} / 左半平面 ${R_MIN_L.toFixed(2)}）<br>` +
+      (s.clamped
+        ? `r 出界 → 沿方位缩到 ${s.rr.toFixed(2)}，用这个边界值照发（臂顶在边界上）`
+        : s.rr < rminSide(s.tx) - 1e-6
+          ? `落在 ${rminSide(s.tx).toFixed(2)} 以内 → 会被推到本侧内边界`
+          : `r 落在有效范围 → 继续解算`),
+      s.clamped ? `r' = <em>${s.rr.toFixed(2)}</em> mm（已钳位）` : `r = <em>${s.rr.toFixed(2)}</em> mm`],
+
+    ["④ 余弦定理求 θ2",
+      `cos θ2 = (r² − L1² − L2²) / (2·L1·L2)<br>` +
+      `　　　 = (${s.rr.toFixed(1)}² − ${L1}² − ${L2}²) / (2·${L1}·${L2}) = ${s.cRaw.toFixed(4)}` +
+      (Math.abs(s.cRaw) > 1 ? ` → 钳到 ${s.c.toFixed(4)}（acos 入参必须钳，否则 NaN）` : ""),
+      `θ2 = ±acos() = <em>±${s.a.toFixed(2)}°</em>　` +
+      (s.sols.every(v => v.limT2) ? `两支都超出 θ2 的 ±90°，该点无解`
+                                  : `取肘更高的一支 → θ2 = <em>${s.sols[s.pick].t2.toFixed(2)}°</em>`)],
+
+    ["⑤ 求方位角 β",
+      `β = atan2(y, x) = atan2(${s.ty.toFixed(2)}, ${s.tx.toFixed(2)})`,
+      `β = <em>${s.beta.toFixed(2)}°</em>（肩→目标的绝对方向）`],
+
+    ["⑥ 求修正角 α",
+      `α = atan2(L2·sin|θ2|, L1 + L2·cos|θ2|)<br>` +
+      `　= atan2(${L2}·sin(${Math.abs(sol.t2).toFixed(1)}°), ${L1} + ${L2}·cos(${Math.abs(sol.t2).toFixed(1)}°))`,
+      `|α| = <em>${Math.abs(sol.alpha).toFixed(2)}°</em>（大臂要从 β 偏开这么多）`],
+
+    ["⑦ θ1 = β " + (sol.t2 >= 0 ? "−" : "+") + " |α|",
+      `θ1 = ${s.beta.toFixed(2)}° ${sol.t2 >= 0 ? "−" : "+"} ${Math.abs(sol.alpha).toFixed(2)}°` +
+      (sol.limT2 ? `<br>→ θ2 超出 [${T2MIN}, ${T2MAX}]，这一支不可用`
+                 : sol.limT1 ? `<br>→ θ1 超出 [${T1MIN}, ${T1MAX}]，这一支不可用，固件保持不动`
+                             : ""),
+      `θ1 = <em>${sol.t1.toFixed(2)}°</em>　θ2 = <em>${sol.t2.toFixed(2)}°</em>`],
+
+    ["⑧ 角度 → 百分比 → 脉宽",
+      `<span class="${sol.ok ? "" : "dead"}">` +
+      `percent = (θ − zero) / ${DPP}<br>` +
+      `大臂 (${sol.t1.toFixed(1)} − ${Z1}) / ${DPP} = ${p1.toFixed(1)}%　` +
+      `小臂 (${sol.t2.toFixed(1)} − ${Z2}) / ${DPP} = ${p2.toFixed(1)}%<br>` +
+      `脉宽 = 1500 + 1000·percent/100</span>`,
+      sol.ok ? `${us1.toFixed(0)} µs / ${us2.toFixed(0)} µs`
+             : `<span class="dead">不解算 —— 越限，固件保持原目标不动</span>`]
+  ];
+
+  stepsEl.innerHTML = rows.map((r, i) => {
+    const n = i + 1;
+    const cls = n <= st.step ? (n === st.step ? "step on now" : "step on") : "step";
+    return `<div class="${cls}" data-i="${n}">
+      <div class="t">${r[0]}<span>${i === 3 && oth.ok ? "另一支 θ2=" + oth.t2.toFixed(1) + "°" : ""}</span></div>
+      <div class="f">${r[1]}</div>
+      <div class="r">${r[2]}</div>
+    </div>`;
+  }).join("");
+
+  stepsEl.querySelectorAll(".step").forEach(el => {
+    el.addEventListener("click", () => { st.step = +el.dataset.i; draw(); renderSteps(); });
+  });
+
+  outEl.textContent = sol.ok
+    ? `S1=${p1.toFixed(0)}% S2=${p2.toFixed(0)}%　(${us1.toFixed(0)}µs / ${us2.toFixed(0)}µs)` +
+      (s.clamped ? `　⤷ 已钳到边界` : "")
+    : "不动（θ1 越限：这个方位够不到）";
+}
+
+/* ---------- 动画：复现固件的 slew 行为（用 timer，不用 rAF：后台标签页 rAF 会被暂停） ---------- */
+let last = 0;
+function tick() {
+  const ts = performance.now();
+  const dt = last ? Math.min((ts - last)/1000, 0.05) : 0;
+  last = ts;
+
+  const want = st.goal;
+  if (want) {
+    const stepMax = SLEW * dt;
+    ["p1", "p2"].forEach(k => {
+      const d = want[k] - st.cur[k];
+      st.cur[k] += Math.abs(d) <= stepMax ? d : Math.sign(d)*stepMax;
+    });
+  }
+  const s = `S1=${Math.round(st.cur.p1)}% S2=${Math.round(st.cur.p2)}%`;
+  if (curEl.textContent !== s) curEl.textContent = s;
+  draw();
+}
+
+/* ---------- 交互 ---------- */
+function setTargetFromEvent(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const px = ev.clientX - rect.left, py = ev.clientY - rect.top;
+  st.target = { x: VIEW.x0 + px/S, y: VIEW.y1 - py/S };
+  refreshGoal();
+}
+
+function refreshGoal() {
+  const s = solve(st.target.x, st.target.y);
+  const sol = s.sols[st.mirror ? 1 - s.pick : s.pick];
+  if (sol.ok) {
+    // 钳位后的解照样下发：臂会走到边界上，而不是原地不动
+    st.goal = { p1: (sol.t1 - Z1)/DPP, p2: (sol.t2 - Z2)/DPP };
+  } else {
+    st.goal = null;          // θ1 越限：这个方位本身够不到，保持不动
+  }
+  draw(); renderSteps();
+}
+
+let dragging = false;
+canvas.addEventListener("pointerdown", e => {
+  dragging = true; canvas.setPointerCapture(e.pointerId);
+  st.step = 8; setTargetFromEvent(e);
+});
+canvas.addEventListener("pointermove", e => { if (dragging) setTargetFromEvent(e); });
+canvas.addEventListener("pointerup", () => { dragging = false; });
+
+mirrorChk.addEventListener("change", () => { st.mirror = mirrorChk.checked; refreshGoal(); });
+
+let timer = null;
+playBtn.addEventListener("click", () => {
+  if (timer) { clearInterval(timer); timer = null; playBtn.textContent = "▶ 逐步推导"; return; }
+  st.step = 1; draw(); renderSteps();
+  playBtn.textContent = "⏸ 暂停";
+  timer = setInterval(() => {
+    st.step++;
+    if (st.step > 8) {
+      clearInterval(timer); timer = null; playBtn.textContent = "▶ 逐步推导";
+      st.step = 8; refreshGoal(); return;
+    }
+    draw(); renderSteps();
+  }, 900);
+});
+
+resetBtn.addEventListener("click", () => {
+  st.cur = { p1: 0, p2: 0 };
+  st.target = { x: 88, y: 42 };
+  st.step = 8; st.mirror = false; mirrorChk.checked = false;
+  refreshGoal();
+});
+
+/* ---------- 启动 ---------- */
+window.__arm = st;   // 调试钩子：控制台可看 st.cur / st.goal
+function layout() {
+  const cssW = canvas.clientWidth || 560;
+  S = cssW/(VIEW.x1 - VIEW.x0);
+  W = cssW; H = (VIEW.y1 - VIEW.y0)*S;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const nw = Math.round(W*dpr), nh = Math.round(H*dpr);
+  if (canvas.width !== nw || canvas.height !== nh) { canvas.width = nw; canvas.height = nh; }
+  canvas.style.height = H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  staticLayer = buildStatic();
+  draw(); renderSteps();
+}
+
+new ResizeObserver(() => { layout(); }).observe(canvas);
+layout();
+refreshGoal();
+setInterval(tick, 16);
+})();
+</script>
+</body>
+</html>
