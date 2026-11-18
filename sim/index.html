@@ -119,6 +119,20 @@
   .facelegend i{width:9px;height:9px;border-radius:2px;display:inline-block}
   @media (max-width:640px){.cuberow{flex-wrap:wrap}#cv3d{flex:0 0 100%;width:100%}}
   .hint{color:#6f8299;font-size:11px;margin-top:4px;line-height:1.6}
+  .stk{display:flex;gap:12px;align-items:flex-start}
+  #cvStick{flex:0 0 132px;width:132px;height:132px;border-radius:9px;background:#070b11;
+    border:1px solid #1a2534;cursor:grab;touch-action:none}
+  #cvStick:active{cursor:grabbing}
+  .stkCol{flex:1 1 auto;min-width:0;font-size:11.5px;color:#a9bdd6}
+  .stkCol .row{display:flex;align-items:center;gap:6px;padding:2px 0;font-size:11.5px}
+  .stkCol .row > label{flex:0 0 auto;color:#a9bdd6}
+  .stkCol select{flex:1 1 auto;min-width:0;background:#0b1220;border:1px solid #22303f;color:var(--text);
+    border-radius:5px;padding:2px 4px;font:11.5px ui-monospace,Consolas,monospace}
+  .stkCol input[type=range]{flex:1 1 auto;min-width:0;accent-color:var(--band);height:4px}
+  .stkVal{flex:0 0 62px;text-align:right;font:11px ui-monospace,Consolas,monospace;color:#93a6bd;
+    font-variant-numeric:tabular-nums}
+  .stkChk{display:flex;flex-wrap:wrap;gap:10px;font-size:11.5px;color:#a9bdd6}
+  .stkChk label{display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
 </style>
 </head>
 <body>
@@ -161,6 +175,39 @@
   <aside class="panel">
     <div class="derived" id="derived"></div>
     <div class="checks" id="checks"></div>
+
+    <details class="cat" open>
+      <summary>摇杆 · 软件限位<span class="catmeta" id="metaStick">停</span></summary>
+      <div class="catbody">
+        <div class="stk">
+          <canvas id="cvStick" width="132" height="132"></canvas>
+          <div class="stkCol">
+            <div class="row"><label>策略</label>
+              <select id="stkMode">
+                <option value="slide">贴边滑（关节域 · 新）</option>
+                <option value="end">末端域（固件现状）</option>
+              </select>
+            </div>
+            <div class="row"><label>阻尼 λ</label><input type="range" id="stkDamp" min="0.02" max="2" step="0.02"><span class="stkVal" id="stkDampVal"></span></div>
+            <div class="row"><label>死区</label><input type="range" id="stkDz" min="0" max="30" step="1"><span class="stkVal" id="stkDzVal"></span></div>
+            <div class="row"><label>速度</label><input type="range" id="stkSpeed" min="5" max="200" step="1"><span class="stkVal" id="stkSpeedVal"></span></div>
+            <div class="stkChk">
+              <label><input type="checkbox" id="stkHold"> 松手保持推杆</label>
+              <label><input type="checkbox" id="stkTrail"> 末端轨迹</label>
+              <label><input type="checkbox" id="stkInter"> 干涉硬限位</label>
+            </div>
+            <div class="btnrow" style="margin-top:5px">
+              <button id="btnStickRun">开始积分</button>
+              <button id="btnStickHome">回中位</button>
+              <button id="btnStickClear">清轨迹</button>
+            </div>
+          </div>
+        </div>
+        <div class="kv" id="stickReadout" style="margin-top:8px"></div>
+        <div class="hint">拖圆盘 = 左摇杆（X 前伸 / Y 抬升，保号平方律）；两种策略用的是同一段摇杆代码，
+          只换限位那一步。贴边滑在顶到限位/边界时把法向速度剔掉，沿边界继续走。</div>
+      </div>
+    </details>
 
     <details class="cat" open>
       <summary>操作 · 取点与手动关节<span class="catmeta">点画布 / 拖滑块</span></summary>
@@ -243,6 +290,7 @@
 
 <script src="cube3d.js"></script>
 <script src="arm_core.js"></script>
+<script src="stick_limit.js"></script>
 <script>
 (function () {
 "use strict";
@@ -276,6 +324,16 @@ const DEFAULT_CFG = {
     jog: [150, 150, 200, 150]
   },
   state: { p1: -66, p2: -86, p3: 0, p4: 0, graspMm: 23.0 },
+  // 摇杆（左摇杆 → 末端速度 → 限位策略）。与固件 arm_pose_stick_velocity + 限位那一步对应
+  stick: {
+    x: 0, y: 0,        // 推杆量，-100..100（圆盘坐标，y 向上为正）
+    mode: "slide",     // slide = 关节域贴边滑；end = 末端域（固件现状，圆环钳位照发）
+    damping: 0.2,      // DLS 阻尼 λ（mm/%）：只在接近奇异时变软
+    deadzone: 6,       // 死区（%），固件是原始计数 8，约等于 6%
+    hold: false,       // 松手是否保持推杆位置
+    trail: true,       // 是否记录末端轨迹
+    ignoreInter: false // true = 不算底盘/地面干涉（只看限位）
+  },
   cube: {
     sizeMm: 20.0,      // 20 mm 立方体
     massG: 10.0,
@@ -1100,6 +1158,7 @@ function draw() {
   drawGround();
   drawChassis();
   if ($("#optWs").checked) { drawWs(); }
+  drawStickTrail();
   drawArm();
   drawCubeMain();
   drawTarget();
@@ -1758,11 +1817,23 @@ function fitWorkspaceRect() {
   const rMax = Core.maxReach(g);
   const ground = -(CFG.chassis.clearanceMm + CFG.chassis.bodyMm);
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  // 前后都算工作区（跨肩轴由斜坡方案支持），所以 x 从负到正都扫
-  for (let x = -(rMax + 20); x <= rMax + 20; x += 4) {
-    for (let y = Math.max(ground + 3, 1); y <= rMax + 20; y += 4) {
+  let n = 0;
+  // 前后都算工作区（跨肩轴由斜坡方案支持），x 从负到正全扫；
+  // y 一路扫到地面（ground+2）—— 车前方那片地面是够得到的（实测 y=−77 上 x 217~223），
+  // 以前从 y≥1 起扫，等于把「伸到车底下」整个排除了。
+  for (let y = ground + 2; y <= rMax + 20; y += 4) {
+    for (let x = -(rMax + 20); x <= rMax + 20; x += 4) {
       if (Math.hypot(x, y) > rMax) { continue; }
-      if (!Core.scanGrasp(g, x, y, 2).length) { continue; }
+      const list = Core.scanGrasp(g, x, y, 2);
+      // 光有精确解不够：还得有一支姿态不撞底盘/地面（车前方 y<0 能到，车体下面不行）
+      let ok = false;
+      for (let i = 0; i < list.length && !ok; i++) {
+        if (!poseHits(list[i].sol.shoulderPercent, list[i].sol.elbowPercent).length) {
+          ok = true;
+        }
+      }
+      if (!ok) { continue; }
+      n++;
       if (x < x0) { x0 = x; }
       if (x > x1) { x1 = x; }
       if (y < y0) { y0 = y; }
@@ -1770,14 +1841,14 @@ function fitWorkspaceRect() {
     }
   }
   if (!isFinite(x0) || x1 <= x0 || y1 <= y0) {
-    return { xMin: -120, xMax: 120, yMin: 0, yMax: 120 };
+    return { xMin: -120, xMax: 120, yMin: ground + 2, yMax: 120 };
   }
   return {
     // 四周各放宽 2 mm，免得按 4 mm 步长拟合出来的框正好把预设在边缘上切掉；
-    // 但外边界不能超过 L1+L2（固件 static_assert）
+    // 但外边界不能超过 L1+L2（固件 static_assert），下边界不能低于地面
     xMin: Math.max(Math.ceil(-rMax), Math.floor(x0) - 2),
     xMax: Math.min(Math.floor(rMax), Math.ceil(x1) + 2),
-    yMin: Math.max(0, Math.floor(y0) - 2),
+    yMin: Math.max(ground, Math.floor(y0) - 2),
     yMax: Math.ceil(y1) + 2
   };
 }
@@ -1872,6 +1943,431 @@ function renderPoses() {
   $("#poseHint").textContent =
     "点名称条 = 解算并把 S3/S4 一起带上；输入框改的是这条的坐标。当前选中：" +
     (CFG.poses[sel] ? CFG.poses[sel].key : "—");
+}
+
+/* ======================= 摇杆 · 软件限位 ======================= */
+/**
+ * 这一段刻意与固件的摇杆链一一对应，换策略只换「限位那一步」：
+ *   圆盘(推杆量) → 死区重映射        ⇔ arm_axis_percent()
+ *   → 保号平方律 + 合速度归一化      ⇔ arm_pose_stick_velocity()
+ *   → 限位策略（两选一）             ⇔ arm_pose.cpp 的 cartesian_step/apply_xy（end）
+ *                                     或 StickLimit.stepTangent（slide，尚未进固件）
+ * 时间步长 dt 由 rAF 给，上限跟 kMotion.maxElapsedMs 一致，所以和固件一样能挡住卡顿。
+ */
+const SL = window.StickLimit;
+
+let stkRunning = false;
+let stkRaf = 0;
+let stkLastMs = 0;
+let stkResult = null;
+let stkCmd = { vx: 0, vy: 0 };
+let stkTrail = [];
+let stkDrag = false;
+
+function stkFinite(v) {
+  return typeof v === "number" && isFinite(v);
+}
+
+/** 推杆百分比 → 摇杆百分比：扣死区后把剩余量线性重映射到 0..100（与 arm_axis_percent 同式） */
+function stkPercent(raw, dz) {
+  const v = Core.clampf(stkFinite(raw) ? raw : 0, -100, 100);
+  const d = Core.clampf(dz || 0, 0, 60);
+  const a = Math.abs(v);
+  if (a <= d) {
+    return 0;
+  }
+  const scaled = (a - d) * 100 / (100 - d);
+  return v < 0 ? -scaled : scaled;
+}
+
+/** 摇杆百分比 → 末端速度：保号平方律 + 双轴满偏归一化（arm_pose_stick_velocity 同源） */
+function stkVelocity(px, py) {
+  const speed = CFG.motion.cartSpeed;
+  const fx = Core.clampf(px, -100, 100) / 100;
+  const fy = Core.clampf(py, -100, 100) / 100;
+  let vx = speed * fx * Math.abs(fx);
+  let vy = speed * fy * Math.abs(fy);
+  const mag = Math.hypot(vx, vy);
+  if (mag > speed && mag > 0) {
+    vx *= speed / mag;
+    vy *= speed / mag;
+  }
+  return { vx: vx, vy: vy };
+}
+
+/** 干涉判据：与画布上的 poseHits 同一套（关掉就只看限位、不管撞车） */
+function stkFeasible(n1, n2) {
+  if (CFG.stick.ignoreInter) {
+    return true;
+  }
+  return poseHits(n1, n2).length === 0;
+}
+
+/** 推进一帧 */
+function stkStep(dt) {
+  const sw = CFG.stick;
+  const px = stkPercent(sw.x, sw.deadzone);
+  const py = stkPercent(sw.y, sw.deadzone);
+  const v = stkVelocity(px, py);
+  stkCmd = v;
+  // 推杆在中位且上一帧也是 idle：不再重绘（rAF 会一直跑，但空转不该占渲染）
+  if (Math.abs(v.vx) < 1e-9 && Math.abs(v.vy) < 1e-9) {
+    if (stkResult && stkResult.flag === SL.FLAG.IDLE) {
+      return stkResult;
+    }
+  }
+  const st = { p1: CFG.state.p1, p2: CFG.state.p2 };
+  let res;
+  if (sw.mode === "end") {
+    res = SL.stepEndDomain(Core, CFG.geom, st, v.vx, v.vy, dt, { ws: CFG.ws });
+  } else {
+    res = SL.stepTangent(Core, CFG.geom, st, v.vx, v.vy, dt,
+      { damping: sw.damping, ws: CFG.ws, feasible: stkFeasible });
+  }
+  // 注意：这里绝对不能 r2() 取整。贴边滑时每帧的关节增量可能只有 0.004%，
+  // 四舍五入到 0.01% 会把它抹成 0，状态被钉死在同一帧、永远卡在墙边
+  // （实测取整后只能到 y=−62.9，不取整到 −76.9）。固件本来就是 float，别在仿真里造精度损失。
+  CFG.state.p1 = res.p1;
+  CFG.state.p2 = res.p2;
+  stkResult = res;
+  if (sw.trail && res.flag !== SL.FLAG.IDLE) {
+    const last = stkTrail[stkTrail.length - 1];
+    if (!last || Math.hypot(res.to.x - last.x, res.to.y - last.y) > 0.4) {
+      stkTrail.push({ x: r2(res.to.x), y: r2(res.to.y) });
+      if (stkTrail.length > 600) {
+        stkTrail.shift();
+      }
+    }
+  }
+  syncStateSliders();
+  draw();
+  renderReadout();
+  stkRenderReadout();
+  stkDrawDial();
+  return res;
+}
+
+function stkSetRunning(on) {
+  stkRunning = !!on;
+  const btn = $("#btnStickRun");
+  if (btn) {
+    btn.textContent = stkRunning ? "暂停积分" : "开始积分";
+  }
+  $("#metaStick").textContent = stkRunning
+    ? (CFG.stick.mode === "slide" ? "贴边滑 · 运行" : "末端域 · 运行")
+    : "停";
+  if (stkRunning) {
+    stkLastMs = 0;
+    if (!stkRaf) {
+      stkRaf = requestAnimationFrame(stkLoop);
+    }
+  } else if (stkRaf) {
+    cancelAnimationFrame(stkRaf);
+    stkRaf = 0;
+  }
+}
+
+function stkLoop(ts) {
+  if (!stkRunning) {
+    return;
+  }
+  if (!stkLastMs) {
+    stkLastMs = ts;
+  }
+  let dt = (ts - stkLastMs) / 1000;
+  stkLastMs = ts;
+  const dmax = CFG.motion.maxElapsedMs / 1000;
+  if (!(dt > 0)) {
+    dt = 0;
+  }
+  if (dt > dmax) {
+    dt = dmax;
+  }
+  if (dt > 0) {
+    stkStep(dt);
+  }
+  stkRaf = requestAnimationFrame(stkLoop);
+}
+
+/** 摇杆圆盘 */
+function stkDrawDial() {
+  const el = $("#cvStick");
+  if (!el) {
+    return;
+  }
+  const w = el.width;
+  const h = el.height;
+  const c = el.getContext("2d");
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = Math.min(w, h) / 2 - 10;
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = "#070b11";
+  c.fillRect(0, 0, w, h);
+
+  c.strokeStyle = "#16202c";
+  c.lineWidth = 1;
+  [0.33, 0.66, 1].forEach(function (k) {
+    c.beginPath();
+    c.arc(cx, cy, R * k, 0, Math.PI * 2);
+    c.stroke();
+  });
+  c.beginPath();
+  c.moveTo(cx - R, cy);
+  c.lineTo(cx + R, cy);
+  c.moveTo(cx, cy - R);
+  c.lineTo(cx, cy + R);
+  c.stroke();
+
+  const dz = Core.clampf(CFG.stick.deadzone, 0, 60) / 100;
+  if (dz > 0.01) {
+    c.strokeStyle = "#2a3a4d";
+    c.setLineDash([3, 3]);
+    c.beginPath();
+    c.arc(cx, cy, R * dz, 0, Math.PI * 2);
+    c.stroke();
+    c.setLineDash([]);
+  }
+
+  const px = Core.clampf(CFG.stick.x, -100, 100) / 100;
+  const py = Core.clampf(CFG.stick.y, -100, 100) / 100;
+  const hx = cx + px * R;
+  const hy = cy - py * R;
+  c.strokeStyle = stkRunning ? "#22d3ee" : "#3d556e";
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(cx, cy);
+  c.lineTo(hx, hy);
+  c.stroke();
+  c.beginPath();
+  c.arc(hx, hy, 9, 0, Math.PI * 2);
+  c.fillStyle = stkRunning ? "#0e3a44" : "#16222f";
+  c.strokeStyle = stkRunning ? "#22d3ee" : "#5d7590";
+  c.fill();
+  c.stroke();
+
+  c.fillStyle = "#6f8299";
+  c.font = "10px ui-monospace,Consolas,monospace";
+  c.fillText("x " + Math.round(px * 100) + "%", 5, h - 5);
+  c.fillText("y " + Math.round(py * 100) + "%", w - 44, h - 5);
+}
+
+function stkFlagText(r) {
+  const map = {
+    idle: ["—", "ok"],
+    ok: ["精确命中", "ok"],
+    wall: ["钳到边界后照发", "warn"],
+    limited: ["θ1 越限 → 整帧不下发", "bad"],
+    slide: ["沿边界切向滑", "warn"],
+    stuck: ["卡死（正对墙 / 奇异）", "bad"]
+  };
+  const m = map[r.flag] || [r.flag, ""];
+  return '<span class="' + m[1] + '">' + m[0] + "</span>";
+}
+
+function stkRenderReadout() {
+  const r = stkResult;
+  const sw = CFG.stick;
+  const rows = [];
+  const px = stkPercent(sw.x, sw.deadzone);
+  const py = stkPercent(sw.y, sw.deadzone);
+  rows.push(["推杆", "<b>" + Math.round(sw.x) + "% / " + Math.round(sw.y) + "%</b>　扣死区后 " +
+    Math.round(px) + "% / " + Math.round(py) + "%"]);
+  rows.push(["期望速度", Math.hypot(stkCmd.vx, stkCmd.vy).toFixed(1) + " mm/s（" +
+    stkCmd.vx.toFixed(1) + ", " + stkCmd.vy.toFixed(1) + "）"]);
+  if (r) {
+    const got = Math.hypot(r.got.x, r.got.y);
+    const want = Math.hypot(r.want.x, r.want.y);
+    rows.push(["本帧位移", got.toFixed(2) + " mm / 期望 " + want.toFixed(2) + " mm" +
+      (want > 1e-6 ? "（" + Math.round(got / want * 100) + "%）" : "")]);
+    rows.push(["判定", stkFlagText(r)]);
+    const cut = (r.cut[0] ? " S1" : "") + (r.cut[1] ? " S2" : "");
+    rows.push(["关节", "S1 " + CFG.state.p1.toFixed(1) + "%　S2 " + CFG.state.p2.toFixed(1) + "%" +
+      (cut ? '　<span class="warn">裁剪' + cut + "</span>" : "")]);
+    if (stkFinite(r.cond)) {
+      rows.push(["条件数", r.cond.toFixed(1) +
+        (r.cond > 100 ? '　<span class="warn">接近奇异</span>' : "")]);
+    }
+  }
+  rows.push(["轨迹", stkTrail.length + " 点"]);
+  $("#stickReadout").innerHTML = rows.map(function (x) {
+    return '<div><span class="k">' + x[0] + "</span>" + x[1] + "</div>";
+  }).join("");
+}
+
+/** 主画布上的末端轨迹 */
+function drawStickTrail() {
+  if (!stkTrail.length) {
+    return;
+  }
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#22d3ee99";
+  ctx.beginPath();
+  stkTrail.forEach(function (p, i) {
+    const q = P(p.x, p.y);
+    if (i === 0) {
+      ctx.moveTo(q.x, q.y);
+    } else {
+      ctx.lineTo(q.x, q.y);
+    }
+  });
+  ctx.stroke();
+  const last = stkTrail[stkTrail.length - 1];
+  const q = P(last.x, last.y);
+  ctx.beginPath();
+  ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#22d3ee";
+  ctx.fill();
+}
+
+/** 摇杆面板的全部接线 */
+function bindStick() {
+  const el = $("#cvStick");
+  const setFromEvent = function (ev) {
+    const rect = el.getBoundingClientRect();
+    const R = Math.min(rect.width, rect.height) / 2 - 10;
+    let dx = ev.clientX - rect.left - rect.width / 2;
+    let dy = -(ev.clientY - rect.top - rect.height / 2);
+    const m = Math.hypot(dx, dy);
+    if (m > R) {
+      dx = dx / m * R;
+      dy = dy / m * R;
+    }
+    CFG.stick.x = r2(dx / R * 100);
+    CFG.stick.y = r2(dy / R * 100);
+    if (!stkRunning) {
+      stkSetRunning(true); // 一碰摇杆就开始积分，省一次点击
+    }
+    stkDrawDial();
+    stkRenderReadout();
+  };
+  el.addEventListener("pointerdown", function (ev) {
+    stkDrag = true;
+    // 合成事件（自动对拍 / 触屏模拟）没有真实 pointerId，抓指针会抛错，兜一下
+    try {
+      el.setPointerCapture(ev.pointerId);
+    } catch (e) { /* 没有真实指针就算了，pointermove 照样能收到 */ }
+    setFromEvent(ev);
+  });
+  el.addEventListener("pointermove", function (ev) {
+    if (stkDrag) {
+      setFromEvent(ev);
+    }
+  });
+  el.addEventListener("pointerup", function () {
+    stkDrag = false;
+    if (!CFG.stick.hold) {
+      CFG.stick.x = 0;
+      CFG.stick.y = 0;
+    }
+    stkDrawDial();
+    stkRenderReadout();
+    saveCfg();
+  });
+  el.addEventListener("pointercancel", function () {
+    stkDrag = false;
+  });
+
+  $("#stkMode").addEventListener("change", function () {
+    CFG.stick.mode = this.value;
+    if (stkRunning) {
+      stkSetRunning(true); // 刷新右上角文案
+    }
+    stkRenderReadout();
+    saveCfg();
+  });
+  $("#stkDamp").addEventListener("input", function () {
+    CFG.stick.damping = parseFloat(this.value);
+    $("#stkDampVal").textContent = CFG.stick.damping.toFixed(2);
+    stkRenderReadout();
+    saveCfg();
+  });
+  $("#stkDz").addEventListener("input", function () {
+    CFG.stick.deadzone = parseFloat(this.value);
+    $("#stkDzVal").textContent = CFG.stick.deadzone.toFixed(0) + "%";
+    stkDrawDial();
+    stkRenderReadout();
+    saveCfg();
+  });
+  $("#stkSpeed").addEventListener("input", function () {
+    CFG.motion.cartSpeed = parseFloat(this.value);
+    $("#stkSpeedVal").textContent = CFG.motion.cartSpeed.toFixed(0) + " mm/s";
+    stkRenderReadout();
+    saveCfg();
+    syncInputs();
+  });
+  $("#stkHold").addEventListener("change", function () {
+    CFG.stick.hold = this.checked;
+    saveCfg();
+  });
+  $("#stkTrail").addEventListener("change", function () {
+    CFG.stick.trail = this.checked;
+    if (!CFG.stick.trail) {
+      stkTrail = [];
+      draw();
+    }
+    saveCfg();
+  });
+  $("#stkInter").addEventListener("change", function () {
+    CFG.stick.ignoreInter = !this.checked;
+    saveCfg();
+  });
+  $("#btnStickRun").addEventListener("click", function () {
+    stkSetRunning(!stkRunning);
+  });
+  $("#btnStickHome").addEventListener("click", function () {
+    CFG.state.p1 = -66;
+    CFG.state.p2 = -86;
+    CFG.stick.x = 0;
+    CFG.stick.y = 0;
+    stkTrail = [];
+    stkResult = null;
+    syncStateSliders();
+    draw();
+    renderReadout();
+    stkRenderReadout();
+    stkDrawDial();
+    saveCfg();
+  });
+  $("#btnStickClear").addEventListener("click", function () {
+    stkTrail = [];
+    stkResult = null;
+    draw();
+    stkRenderReadout();
+    stkDrawDial();
+  });
+
+  $("#stkDampVal").textContent = CFG.stick.damping.toFixed(2);
+  $("#stkDzVal").textContent = CFG.stick.deadzone.toFixed(0) + "%";
+  $("#stkSpeedVal").textContent = CFG.motion.cartSpeed.toFixed(0) + " mm/s";
+  $("#stkDamp").value = CFG.stick.damping;
+  $("#stkDz").value = CFG.stick.deadzone;
+  $("#stkSpeed").value = CFG.motion.cartSpeed;
+  $("#stkMode").value = CFG.stick.mode;
+  $("#stkHold").checked = CFG.stick.hold;
+  $("#stkTrail").checked = CFG.stick.trail;
+  $("#stkInter").checked = !CFG.stick.ignoreInter;
+  stkDrawDial();
+  stkRenderReadout();
+}
+
+/** 给 sim/verify 与自动对拍用的快照 */
+function stkSnap(r) {
+  const pp = poseParts();
+  return {
+    p1: CFG.state.p1,
+    p2: CFG.state.p2,
+    tip: [r2(pp.tipX), r2(pp.tipY)],
+    r: r2(Math.hypot(pp.tipX, pp.tipY)),
+    flag: r ? r.flag : null,
+    slide: r ? !!r.slide : false,
+    cut: r ? r.cut : null,
+    cond: r && stkFinite(r.cond) ? r2(r.cond) : null,
+    want: r ? r2(Math.hypot(r.want.x, r.want.y)) : null,
+    got: r ? r2(Math.hypot(r.got.x, r.got.y)) : null,
+    trail: stkTrail.length,
+    mode: CFG.stick.mode
+  };
 }
 
 /* ======================= 交互 ======================= */
@@ -2130,6 +2626,15 @@ function mergeCfg(obj) {
         if (typeof obj.phys[k] === "number") { CFG.phys[k] = obj.phys[k]; }
       });
   }
+  if (obj.stick) {
+    ["x", "y", "damping", "deadzone"].forEach(function (k) {
+      if (typeof obj.stick[k] === "number") { CFG.stick[k] = obj.stick[k]; }
+    });
+    ["hold", "trail", "ignoreInter"].forEach(function (k) {
+      if (typeof obj.stick[k] === "boolean") { CFG.stick[k] = obj.stick[k]; }
+    });
+    if (obj.stick.mode === "slide" || obj.stick.mode === "end") { CFG.stick.mode = obj.stick.mode; }
+  }
   if (obj.state) {
     ["p1", "p2", "p3", "p4"].forEach(function (k) {
       if (typeof obj.state[k] === "number") { CFG.state[k] = obj.state[k]; }
@@ -2157,7 +2662,7 @@ function saveCfg() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       chassis: CFG.chassis, geom: CFG.geom, ws: CFG.ws,
       motion: CFG.motion, state: CFG.state, poses: CFG.poses,
-      cube: CFG.cube, phys: CFG.phys
+      cube: CFG.cube, phys: CFG.phys, stick: CFG.stick
     }));
   } catch (e) { /* file:// 下不可用就算了 */ }
 }
@@ -2306,11 +2811,17 @@ function init() {
   loadCfg();
   if (!CFG.poses.length) { CFG.poses = suggestPoses(); }
   if (!(CFG.ws.xMax > CFG.ws.xMin)) { CFG.ws = fitWorkspaceRect(); }
+  // 老口径的框（y_min 停在 0 附近，等于够不到车前方那片地面）自动按新口径重拟合一次；
+  // 手调过的工作区请点「按可达域重新拟合」旁边的输入框自己改回来。
+  if (CFG.ws.yMin > -(CFG.chassis.clearanceMm + CFG.chassis.bodyMm) + 10) {
+    CFG.ws = fitWorkspaceRect();
+  }
   buildSections();
   syncInputs();
   layout();
   buildBand();
   bindEvents();
+  bindStick();
   refresh();
 }
 
@@ -2346,6 +2857,34 @@ window.__sim = {
       buildBand();
       refresh();
     }
+  },
+  // 摇杆：自动对拍走这里（step 手动推 dt，不依赖 rAF）
+  stick: {
+    set: function (px, py) {
+      CFG.stick.x = px;
+      CFG.stick.y = py;
+      stkDrawDial();
+      stkRenderReadout();
+      return stkSnap(null);
+    },
+    step: function (dt) { return stkSnap(stkStep(dt)); },
+    run: function (on) { stkSetRunning(!!on); return stkRunning; },
+    mode: function (m) {
+      if (m === "slide" || m === "end") { CFG.stick.mode = m; }
+      return CFG.stick.mode;
+    },
+    reset: function () {
+      CFG.state.p1 = -66;
+      CFG.state.p2 = -86;
+      CFG.stick.x = 0;
+      CFG.stick.y = 0;
+      stkTrail = [];
+      stkResult = null;
+      stkDrawDial();
+      return stkSnap(null);
+    },
+    snap: function () { return stkSnap(stkResult); },
+    trail: function () { return stkTrail.slice(); }
   }
 };
 })();

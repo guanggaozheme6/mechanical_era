@@ -22,7 +22,7 @@ CMake 按层加 `-I`。
 | --- | --- | --- | --- | --- |
 | **HAL** | `Core/`、`Drivers/`（CubeMX 生成，手改只动 `USER CODE`） | 操作寄存器、启动外设、ISR 入口 | 业务逻辑、数据解析 | `MX_TIM8_Init`、`HAL_SPI_TransmitReceive`；`Core/Src/main.c` 只调一次 `main_task()` |
 | **Driver** | `Driver/inc` + `Driver/src` | 片选/字节间隙等时序、方向脚与 PWM、编码器计数 | 解析协议、做闭环、认业务 | `ps2`（SPI 帧交换、模拟模式协商、轮询超时）、`outputs`（电机方向+PWM、换向等待、舵机脉宽）、`encoder`（四路 AB 相） |
-| **Algorithm** | `Algorithm/inc` + `Algorithm/src` | 纯数学：IK/FK、PID；不碰硬件、无全局状态、不读时钟 | 硬件操作、状态管理 | `arm_kinematics`（平面 2R）、`pid`（纯 PID + 抗饱和） |
+| **Algorithm** | `Algorithm/inc` + `Algorithm/src` | 纯数学：IK/FK、摇杆限位、PID；不碰硬件、无全局状态、不读时钟 | 硬件操作、状态管理 | `arm_kinematics`（平面 2R）、`arm_limit`（摇杆限位：位置法 + 关节域贴边滑）、`pid`（纯 PID + 抗饱和） |
 | **Device** | `Device/inc` + `Device/src` | 协议解析、设备状态机、闭环控制接口 | 底层通信细节 | `ps2_protocol`（报文解码）、`motor`（四路速度闭环）、`arm_joint`（行程状态机）、`arm_pose`（机械臂编排）、`drive_control`（麦轮混控）、`arm_control`（摇杆换算） |
 | **Task** | `Task/inc` + `Task/src` | 业务编排、控制循环、模式状态机 | 底层协议、寄存器 | `main`（1 ms 循环与板载急停）、`mode_control`（模式/按键）、`diagnostics`（串口上报） |
 | **公共** | `Include/` | 参数真值与 C 入口声明 | 任何逻辑 | `car_config.hpp`（底盘与摇杆）、`arm_config.hpp`（机械臂）、`app.h`（`main_task()` 声明，必须 `extern "C"`） |
@@ -148,7 +148,7 @@ ps2_update() ─► ps2_read() ─► mode_control_update(frame, now) ─┬─�
 
 | 输入 | 行为 |
 | --- | --- |
-| 左摇杆 X / Y | 末端笛卡尔速度：X 前伸/回收，Y 抬升/下压；平方律，满杆 50 mm/s，死区 8，松手即停 |
+| 左摇杆 X / Y | 末端笛卡尔速度：X 前伸/回收，Y 抬升/下压；平方律，满杆 50 mm/s，死区 8，松手即停。顶到边界不是停死，而是**贴边切向滑**（`Algorithm/src/arm_limit.cpp`，算式与实测见 `sim/README.md` §8） |
 | `L2` / `R2` | 夹爪 松 / 紧（servo[2]，200 %/s；正行程 = 张开） |
 | `L1` / `R1` | 腕 roll 逆 / 顺（servo[3]，150 %/s） |
 | ↑ / ↓ / ← / → | 预设 P0 / P1 / P2 / P3 |
@@ -191,7 +191,9 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
   `KEY=` 是板载 Key 去抖后的电平。
 - `PID4` 是 M4 的闭环状态；`M4HW-v1` 是 TIM1/GPIO 的实配寄存器，用来对照「请求的占空比 vs 寄存器里真的是多少」。
 - `S1..S4` 位置固定（标定手法依赖它）；`xy` 是 FK 回算的当前末端，`tgt` 是本帧解算用的目标，
-  `th` 是连杆角；`ok`/`lim`/`wall` 分别是「精确命中 / 关节超限（没下发）/ 被钳到边界（已下发）」；
+  `th` 是连杆角；`ok`/`lim`/`wall` 三个**独立**标志：`ok=1` 精确命中（没缩步没裁角）、
+  `lim=1` 一步都走不动（正对墙 / 墙角，整帧未下发）、`wall=1` 顶住边界但还在走
+  （缩步 / 沿边切向滑，已下发）；
   `poses` 是上电自检失败的预设位掩码（`0x00` = 八条全好）；
   `bu=1` 表示这是 `ARM_BRINGUP` 标定版（正常版恒 0，标完看到 1 就是烧错了）。
 
@@ -220,6 +222,8 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 | `slew_percent_per_second` | 300 | `kMotion` | 关节插值限速（编译期要过 4 倍余量自检） |
 | `settle_percent` | 1.0 | `kMotion` | `at_target` 容差 |
 | `jog_percent_per_second[4]` | 150/150/200/150 | `kMotion` | 肩/肘（占位）/夹爪/腕 |
+| `stick_damping_mm_per_percent` | 0.2 | `kMotion` | 关节兜底阻尼 λ：只影响「顶住后沿边滑」。越小越跟手，奇异区越抖（0.02 时抖动 3.08 mm/帧²，0.2 时 0.061） |
+| `stick_box_tol_mm` | 0.02 | `kMotion` | 矩形当墙的线性化残差容差：舵机一个步进 2.6 mm 的 1%。调 0 会被自己的残差判死、贴边整段不动 |
 
 `kJointLimits` 不手填：由 `percent_of()` 从角度限位在编译期派生。改角度限位即可，别维护第二套百分比。
 
@@ -292,7 +296,7 @@ g++ -std=c++14 -I Include -I Algorithm/inc -I Device/inc -I Driver/inc -I Task/i
     your_probe.cpp \
     Task/src/mode_control.cpp Device/src/arm_pose.cpp Device/src/arm_joint.cpp \
     Device/src/drive_control.cpp Device/src/ps2_protocol.cpp Device/src/arm_control.cpp \
-    Algorithm/src/arm_kinematics.cpp Algorithm/src/pid.cpp -o probe.exe
+    Algorithm/src/arm_kinematics.cpp Algorithm/src/arm_limit.cpp Algorithm/src/pid.cpp -o probe.exe
 ```
 
 用它验：正逆解互逆误差、8 条预设可达性、限位与 jog 会不会被绕过、急停/断线时是否真的冻结。

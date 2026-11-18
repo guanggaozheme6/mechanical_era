@@ -26,8 +26,9 @@ target_sources(${PROJECT_NAME} PRIVATE
     Device/src/motor.cpp
     Device/src/arm_joint.cpp
     Device/src/arm_pose.cpp
-    # Algorithm 层：纯计算（IK/FK、PID）
+    # Algorithm 层：纯计算（IK/FK、PID、摇杆限位）
     Algorithm/src/arm_kinematics.cpp
+    Algorithm/src/arm_limit.cpp
     Algorithm/src/pid.cpp
     # Driver 层：寄存器 / PWM / SPI 时序
     Driver/src/ps2.cpp

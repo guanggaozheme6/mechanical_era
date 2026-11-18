@@ -124,6 +124,8 @@ struct Motion {
     float sag_mm_per_100mm;                  // 水平位下垂预补偿，0 = 关闭
     unsigned max_elapsed_ms;                 // 单帧最大积分步长（主循环卡顿保护）
     int jog_percent_per_second[4];           // 夹爪/腕的满杆 jog 速度（轴 0/1 白名单禁止，值为占位）
+    float stick_damping_mm_per_percent;      // 摇杆关节兜底的阻尼 λ（mm/%）：越小越跟手，奇异区越抖
+    float stick_box_tol_mm;                  // 矩形当墙的线性化残差容差（mm）：法向剔除会残留这个量
 };
 
 /**
@@ -137,6 +139,8 @@ constexpr Motion kMotion = {
     0.0F,                 // sag：默认关闭，见 v0.3 风险表
     100U,                 // max_elapsed_ms（arm_pose.cpp 原 kMaxElapsedMs）
     {150, 150, 200, 150}, // jog: 肩/肘/夹爪/腕
+    0.2F,                 // stick_damping：仿真实测 0.2 → 抖动 0.061 mm/帧²（0.02 时 3.08）
+    0.02F,                // stick_box_tol：舵机一个步进 2.6 mm 的 1%，刚好盖住线性化残差
 };
 
 /**
@@ -254,6 +258,10 @@ static_assert(kMotion.cart_speed_mm_per_second > 0.0F, "满杆末端速度必须
 static_assert(kMotion.slew_percent_per_second > 0.0F, "slew 必须为正");
 static_assert(kMotion.sag_mm_per_100mm >= 0.0F, "下垂补偿不允许为负");
 static_assert(kMotion.jog_percent_per_second[kGripperServo] > 0, "夹爪 jog 速度必须为正");
+static_assert(kMotion.stick_damping_mm_per_percent > 0.0F,
+              "贴边滑阻尼必须为正：0 会让奇异区（θ2→0）来回抖");
+static_assert(kMotion.stick_box_tol_mm > 0.0F,
+              "矩形当墙的容差必须为正：法向剔除是线性化投影，容差 0 会被自己的残差判死");
 static_assert(slew_ok(), "slew 余量不足 4 倍，末端精调会跟不上摇杆");
 static_assert(kPoseCount == 8U, "预设姿态数量与 8 个按键不一致");
 static_assert(sizeof(kPoses) / sizeof(kPoses[0]) == kPoseCount, "kPoses 行数与 Pose::Count 不一致");

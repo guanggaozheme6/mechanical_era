@@ -10,6 +10,7 @@
 #include "arm_config.hpp"
 #include "arm_joint.hpp"
 #include "arm_kinematics.hpp"
+#include "arm_limit.hpp"
 
 #include <cmath>
 
@@ -63,6 +64,26 @@ constexpr int kBringupPercent[kServoCount] = {0, 0, 0, 0};
 constexpr arm_joint::Limits kBringupLimits[kServoCount] = {
     {-100.0F, 100.0F}, {-100.0F, 100.0F}, {-100.0F, 100.0F}, {-100.0F, 100.0F}};
 
+/**
+ * @brief 摇杆限位（arm_limit）要用的三张表
+ * @details 算法层不认识 arm_config，所以限位/矩形/调参由这一层从配置派生后传进去，
+ *          形态是 arm_limit 自己的 POD。改 kWorkspace / kJointLimits / kMotion 不用动算法。
+ */
+constexpr arm_limit::Span kLimitSpans[2] = {
+    {arm_config::kJointLimits[arm_config::kShoulderServo].min_percent,
+     arm_config::kJointLimits[arm_config::kShoulderServo].max_percent},
+    {arm_config::kJointLimits[arm_config::kElbowServo].min_percent,
+     arm_config::kJointLimits[arm_config::kElbowServo].max_percent}};
+
+/** @brief 工作区矩形（摇杆命令的允许范围，不是可达性证明） */
+constexpr arm_limit::Box kStepBox = {kWorkspace.x_min_mm, kWorkspace.x_max_mm,
+                                     kWorkspace.y_min_mm, kWorkspace.y_max_mm};
+
+/** @brief 限位策略调参：阻尼 λ / 下垂补偿 / 矩形残差容差 */
+constexpr arm_limit::Params kStepParams = {kMotion.stick_damping_mm_per_percent,
+                                           kMotion.sag_mm_per_100mm,
+                                           kMotion.stick_box_tol_mm};
+
 /* Private variables ---------------------------------------------------------*/
 
 arm_joint::Bank g_bank;
@@ -115,10 +136,11 @@ void refresh_feedback() {
 }
 
 /**
- * @brief 两级钳位 + IK + 写入关节层
+ * @brief 绝对值入口：两级钳位 + IK + 写入关节层（预设 / 上位机用的那条路）
  * @details 钳位顺序不能反：先矩形（穿肩轴 / 力矩 / 折叠死区），再圆环（够不着）。
  *          越界**不拒绝**：矩形直接夹到边，半径沿方位缩到"限位允许的可控边界"，
- *          然后把钳位结果照样下发 —— 摇杆推到头就是顶住边界，手感连续。
+ *          然后把钳位结果照样下发 —— 按预设/给坐标是「去一个点」，不是「沿某个方向走」，
+ *          所以这里保留钳位照发；摇杆那条路才是贴边滑（见 cartesian_step + arm_limit）。
  *          只有 θ1 越出结构限位才真的不动作（那个方位本身够不到，硬掰会让臂甩到别处）。
  * @param x_mm 请求 x（mm）
  * @param y_mm 请求 y（mm）
@@ -174,22 +196,39 @@ bool apply_xy(float x_mm, float y_mm, float &applied_x, float &applied_y) {
 }
 
 /**
- * @brief 闭环于"当前实际末端"的积分
- * @details 每帧只走一个步长，不累积虚假距离：松手不追尾、到边界不蠕动、扳回立即恢复。
+ * @brief 摇杆一步：位置法优先，关节域兜底（贴边滑）
+ * @details 与旧版（FK → 矩形钳位 → solve_xy → 钳位照发）的差别只有一句：
+ *          「走不通」不再解释成「沿半径缩到弧带上照发」，而是「位置法沿摇杆方向缩步，
+ *          缩到底就交给关节域沿边界切向滑」。两段式与实测对比见 sim/README.md §8.1。
+ *          闭环于「当前实际末端」（current，不是 target）：每帧只走一个步长，松手不追尾、
+ *          到边界不蠕动、扳回立即恢复。
  * @param dt_s 本帧时长（秒）
  */
 void cartesian_step(float dt_s) {
     const float s1 = g_bank.channel[arm_config::kShoulderServo].current;
     const float s2 = g_bank.channel[arm_config::kElbowServo].current;
-    float fx = 0.0F;
-    float fy = 0.0F;
-    arm_kinematics::solve_forward(kGeom, s1, s2, fx, fy);
+    const arm_limit::Step step = arm_limit::tangent_step(kGeom, kLimitSpans, kStepBox, kStepParams,
+                                                        s1, s2, g_cart_vx, g_cart_vy, dt_s);
 
-    float applied_x = 0.0F;
-    float applied_y = 0.0F;
-    apply_xy(fx + g_cart_vx * dt_s, fy + g_cart_vy * dt_s, applied_x, applied_y);
-    g_fb.target_x_mm = applied_x;
-    g_fb.target_y_mm = applied_y;
+    if (!step.idle && !step.stuck) {
+        // 关节层里还有一道限位；percent 全程 float，取整只发生在 ArmCommand 收口处
+        // （贴边滑每帧可能只增 0.004%，中间取整会把增量抹成 0，现象是「推不动」）。
+        arm_joint::set_target(g_bank.channel[arm_config::kShoulderServo], step.p1_percent);
+        arm_joint::set_target(g_bank.channel[arm_config::kElbowServo], step.p2_percent);
+    }
+
+    // 反馈口径：三个独立事实，不许合成一个 ok。
+    //   ok=1 精确命中（没缩步、没裁角）；wall=1 顶住边界但还在走（缩步 / 切向滑，已下发）；
+    //   lim=1 一步都走不动（正对墙 / 墙角），整帧不下发。
+    g_fb.reachable = !step.slide && !step.stuck;
+    g_fb.at_wall = step.slide || step.stuck;
+    g_fb.limited = step.stuck;
+
+    float target_x = 0.0F;
+    float target_y = 0.0F;
+    arm_kinematics::solve_forward(kGeom, step.p1_percent, step.p2_percent, target_x, target_y);
+    g_fb.target_x_mm = target_x;
+    g_fb.target_y_mm = target_y;
 }
 
 /**

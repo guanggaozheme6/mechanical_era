@@ -14,7 +14,7 @@
 
 // 这一层只做"谁调谁"：
 //   预设/坐标请求 → arm_kinematics::solve_xy → arm_joint::set_target
-//   左摇杆速度   → FK(当前) → 矩形钳位 → IK → arm_joint::set_target
+//   左摇杆速度   → FK(当前) → arm_limit::tangent_step（位置法 + 关节域贴边滑）→ set_target
 //   夹爪/腕速度  → arm_joint::set_jog（不经 IK）
 //   每帧          → arm_joint::bank_update → ArmCommand
 // 不含三角函数公式、不含积分公式、不含限位表。
@@ -37,9 +37,9 @@ struct ArmFeedback {
     float target_y_mm = 0.0F;  //
     float shoulder_deg = 0.0F; // 当前连杆角（标定反推用）
     float elbow_deg = 0.0F;    //
-    bool reachable = true;     // 圆环内（没被径向钳位 = 精确命中）
-    bool limited = false;      // θ1 被结构限位裁剪（该方位够不到，未下发）
-    bool at_wall = false;      // 目标被钳到边界（已下发）；与 limited 互斥
+    bool reachable = true;     // 圆环内 / 精确命中（摇杆：没缩步没裁角）
+    bool limited = false;      // 一步都走不动（正对墙 / 墙角），整帧未下发
+    bool at_wall = false;      // 顶住边界但仍在走（缩步 / 切向滑），已下发
     bool bringup = false;      // 当前固件是 ARM_BRINGUP 标定版
     unsigned bad_poses = 0U;   // 上电自检失败的预设位掩码
 };

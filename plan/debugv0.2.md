@@ -128,6 +128,7 @@ pitch 会改变腕点位置 → 2R 模型失效 → 必须升 3R。**这是模�
 | D-19 | 串口没有「离边界还有多远」的量 | `diagnostics.cpp:96` | 只有布尔。顶边界时打 `r=108.12/108.12` 之类更直观 |
 | D-20 | `ARM_BRINGUP` 流程说明还是 A 的 | `arm_pose.cpp:20-60` | 改 −45/+135，强调两端零余量 |
 | D-21 | 摇杆方向未实测 | `mode_control.cpp:118-119` | `left_x→forward`、`left_y→lift(invert)` 是约定，上电第一件事确认 |
+| **D-27** | ~~摇杆限位：末端域 → 关节域贴边滑~~ | ~~`arm_pose.cpp:176-193`~~ | **已落地**：`Algorithm/src/arm_limit.cpp`（位置法 + 关节兜底，纯函数），`arm_pose.cpp` 的 `cartesian_step()` 改调 `arm_limit::tangent_step()`，阻尼/容差进 `kMotion`（`stick_damping_mm_per_percent` / `stick_box_tol_mm`）。验收 `node sim/verify/stick_port_test.js` 6/6 PASS（含与 `sim/stick_limit.js` 的 200 步逐帧对拍，最大偏差 6.7e−4 %）。**干涉判据没进固件**：只靠限位 + 矩形，要加就在 `arm_limit.cpp` 的 `feasible_at()` 里补线段采样 |
 | **D-24** | 选支/半径保持（根治 D-3） | `arm_kinematics.cpp` | `solve_xy` 是纯函数，跨 x=0 必然翻支。要根治得让调用方传入"上一帧的 θ2 符号"，接口会变，下版再说 |
 | **D-25** | 8 条预设在弧带上是"同形态"的 | `arm_config.hpp:186-192` | 8 条的 θ2 全在 −12°~−42°、percent −63~−97，实际只差 θ1（4°~61°）。语义上更像"沿弧摆 8 个方向"而不是 8 种姿态；要不要减到 4~5 条，等工位定了再定 |
 
