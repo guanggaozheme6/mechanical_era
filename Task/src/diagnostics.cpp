@@ -16,27 +16,26 @@
 
 /**
  * @brief 上报 PS2 + 底盘状态，并附带 M4 的闭环与寄存器实配
- * @details 三行：主状态（op= 操作模式，mode= 协议模式字）、PID4 闭环、M4 硬件配置。
+ * @details 三行：主状态（mode= 协议模式字、LX/LY/RX/RY 双摇杆）、PID4 闭环、M4 硬件配置。
  * @param frame 本帧手柄数据
  * @param command 本帧实际下发的四路电机指令
  * @param emergency_stop 板载 Key 的急停状态
  * @param key_pressed 板载 Key 当前电平（去抖后）
- * @param arm_mode true 打 op=ARM，false 打 op=DRV
  */
 void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_stop,
-                   bool key_pressed, bool arm_mode) {
+                   bool key_pressed) {
     char message[192];
-    // mode= 是 PS2 协议模式字（0x41/0x73/0x79）；操作模式另起 op=，别混用。
+    // mode= 是 PS2 协议模式字（0x41/0x73/0x79）；v0.4 起没有操作模式，op= 已删。
     const int length = std::snprintf(
         message, sizeof(message),
-        "PS2 online=%lu mode=%02lX op=%s keys=%04lX LX=%lu LY=%lu M=%d,%d,%d,%d STOP=%u KEY=%u "
-        "bad=%lu\r\n",
+        "PS2 online=%lu mode=%02lX keys=%04lX LX=%lu LY=%lu RX=%lu RY=%lu M=%d,%d,%d,%d "
+        "STOP=%u KEY=%u bad=%lu\r\n",
         static_cast<unsigned long>(frame.connected), static_cast<unsigned long>(ps2_debug.mode),
-        arm_mode ? "ARM" : "DRV", static_cast<unsigned long>(frame.buttons),
-        static_cast<unsigned long>(frame.left_x), static_cast<unsigned long>(frame.left_y),
-        command.motor[0], command.motor[1], command.motor[2], command.motor[3],
-        static_cast<unsigned>(emergency_stop), static_cast<unsigned>(key_pressed),
-        static_cast<unsigned long>(ps2_debug.invalid_frames));
+        static_cast<unsigned long>(frame.buttons), static_cast<unsigned long>(frame.left_x),
+        static_cast<unsigned long>(frame.left_y), static_cast<unsigned long>(frame.right_x),
+        static_cast<unsigned long>(frame.right_y), command.motor[0], command.motor[1],
+        command.motor[2], command.motor[3], static_cast<unsigned>(emergency_stop),
+        static_cast<unsigned>(key_pressed), static_cast<unsigned long>(ps2_debug.invalid_frames));
     if (length > 0 && static_cast<unsigned>(length) < sizeof(message)) {
         HAL_UART_Transmit(&huart3, reinterpret_cast<uint8_t *>(message),
                           static_cast<uint16_t>(length), 20);

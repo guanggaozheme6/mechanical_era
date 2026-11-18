@@ -6,10 +6,13 @@ STM32F103（256 KB Flash / 48 KB RAM）上的麦轮底盘 + 平面 2R 机械臂�
 
 - 芯片：STM32F103xE（`mechanical_era.ioc`），HSE 8 MHz × 9 = **72 MHz**
 - 工具链：CMake + Ninja + PATH 里的 `arm-none-eabi-`（GCC 15.3.1），`-Wall -Wextra -Werror`
-- 当前构建：Debug `FLASH 46812 B (17.9%)` / `RAM 3104 B (6.3%)`；
-  Release `FLASH 33064 B (12.6%)` / `RAM 3104 B (6.3%)`；两者均 0 error / 0 warning
-- 设计文档：`plan/arm_pose_v0.3.md`（机械臂）、`plan/ps2_control_v0.2.md`（输入与模式）
-- 二维仿真：`sim/index.html`（双击即开，无后端；几何/标定/预设/导出都在里面，见 `sim/README.md`）
+- 当前构建：Debug `FLASH 46376 B (17.7%)` / `RAM 3104 B (6.3%)`；
+  Release `FLASH 32704 B (12.5%)` / `RAM 3104 B (6.3%)`；两者均 0 error / 0 warning
+- 二维仿真：`sim/index.html`（双击即开，无后端；几何/标定/限位/导出都在里面，见 `sim/README.md`）
+- 待办与坑：`Debug.md`（仓库根目录）
+
+> **v0.4 是一次接口级精简，旧的操作方式已经不成立**：没有模式切换、没有 8 条预设姿态、
+> 机械臂改右摇杆。改动清单与不兼容项见 §9，迁移前先看它。
 
 ---
 
@@ -24,7 +27,7 @@ CMake 按层加 `-I`。
 | **Driver** | `Driver/inc` + `Driver/src` | 片选/字节间隙等时序、方向脚与 PWM、编码器计数 | 解析协议、做闭环、认业务 | `ps2`（SPI 帧交换、模拟模式协商、轮询超时）、`outputs`（电机方向+PWM、换向等待、舵机脉宽）、`encoder`（四路 AB 相） |
 | **Algorithm** | `Algorithm/inc` + `Algorithm/src` | 纯数学：IK/FK、摇杆限位、PID；不碰硬件、无全局状态、不读时钟 | 硬件操作、状态管理 | `arm_kinematics`（平面 2R）、`arm_limit`（摇杆限位：位置法 + 关节域贴边滑）、`pid`（纯 PID + 抗饱和） |
 | **Device** | `Device/inc` + `Device/src` | 协议解析、设备状态机、闭环控制接口 | 底层通信细节 | `ps2_protocol`（报文解码）、`motor`（四路速度闭环）、`arm_joint`（行程状态机）、`arm_pose`（机械臂编排）、`drive_control`（麦轮混控）、`arm_control`（摇杆换算） |
-| **Task** | `Task/inc` + `Task/src` | 业务编排、控制循环、模式状态机 | 底层协议、寄存器 | `main`（1 ms 循环与板载急停）、`mode_control`（模式/按键）、`diagnostics`（串口上报） |
+| **Task** | `Task/inc` + `Task/src` | 业务编排、控制循环、按键分发与急停 | 底层协议、寄存器 | `main`（1 ms 循环与板载急停）、`mode_control`（按键分发/急停组合）、`diagnostics`（串口上报） |
 | **公共** | `Include/` | 参数真值、C 入口声明、HAL 句柄声明 | 任何逻辑 | `car_config.hpp`（底盘与摇杆）、`arm_config.hpp`（机械臂）、`app.h`（`main_task()` 声明，必须 `extern "C"`）、`hal_handles.h`（HAL 句柄的 `extern` 声明） |
 
 依赖方向：Task → Device → Algorithm，Task → Driver → HAL；Device 不 include Driver 的实现细节。
@@ -42,11 +45,13 @@ CMake 按层加 `-I`。
 
 1. `Task/src/main.cpp`：主循环、板载 Key 去抖与急停、定时上报。
 2. `Driver/src/ps2.cpp`：SPI 帧交换、模拟模式协商、轮询与超时；解码在 `Device/src/ps2_protocol.cpp`。
-3. `Task/src/mode_control.cpp`：两个模式入口、按键边沿位图、`L3+R3` 急停组合、预设绑定表。
-4. `Device/src/arm_pose.cpp`：预设/笛卡尔入口 → 解算 → 关节层，以及反馈聚合。
-5. `Algorithm/src/arm_kinematics.cpp`（平面 2R 逆解/正解）+ `Device/src/arm_joint.cpp`（四路行程状态机）。
-6. `Device/src/motor.cpp` + `Algorithm/src/pid.cpp` + `Driver/src/encoder.cpp`：一个电机拆在三层里的示例。
-7. `Device/src/drive_control.cpp`（麦轮混控）+ `Driver/src/outputs.cpp`（方向脚、PWM、换向等待、舵机脉宽）。
+3. `Task/src/mode_control.cpp`：**按键分工的唯一真值**（左右摇杆 / L1R1 / L2R2 / 方向键 / Start）、
+   `L3+R3` 急停组合、边沿位图。v0.4 起这里没有"当前模式"。
+4. `Device/src/arm_pose.cpp`：中立位 / 笛卡尔入口 → 解算 → 关节层，以及反馈聚合。
+5. `Algorithm/src/arm_limit.cpp`：摇杆一步的两段式限位（位置法缩步 + 关节域贴边滑）。
+6. `Algorithm/src/arm_kinematics.cpp`（平面 2R 逆解/正解）+ `Device/src/arm_joint.cpp`（四路行程状态机）。
+7. `Device/src/motor.cpp` + `Algorithm/src/pid.cpp` + `Driver/src/encoder.cpp`：一个电机拆在三层里的示例。
+8. `Device/src/drive_control.cpp`（麦轮混控）+ `Driver/src/outputs.cpp`（方向脚、PWM、换向等待、舵机脉宽）。
 
 ---
 
@@ -66,7 +71,7 @@ CMake 按层加 `-I`。
 | M2 方向 A/B | PC2 / PC3 | 同上 |
 | M3 方向 A/B | PC4 / PC5 | 同上 |
 | M4 方向 A/B | PB10 / PB11 | 同上 |
-| M1 编码器 | PA15 (TIM2_CH1) / PB3 (CH2) | 需 `SWJ_NOJTAG` + TIM2 部分重映射 1（`TIM2_REMAP=01`），SWD 调试保留；全映射会撞 M4 方向脚 PB10/PB11 |
+| M1 编码器 | PA15 (TIM2_CH1) / PB3 (CH2) | 需 `SWJ_NOJTAG` + TIM2 部分重映射 **PARTIAL_1**（`TIM2_REMAP=01`），SWD 调试保留；全映射会撞 M4 方向脚 PB10/PB11 |
 | M2 编码器 | PA6 (TIM3_CH1) / PA7 (CH2) | |
 | M3 编码器 | PA0 (TIM5_CH1) / PA1 (CH2) | |
 | M4 编码器 | PB6 (TIM4_CH1) / PB7 (CH2) | |
@@ -124,45 +129,39 @@ ps2_update() ─► ps2_read() ─► mode_control_update(frame, now) ─┬─�
 ```
 
 - 主循环 1 ms；PS2 报文每 20 ms 换一帧，其余 19 轮沿用同一帧（边沿检测靠 `mode_control` 里的位图）。
-- PS2 报文只解码一次（`ps2_protocol.cpp`），程序里按键位统一为 **1 = 按下**。
+- PS2 报文只解码一次（`ps2_protocol.cpp`），程序里按键位统一为 **1 = 按下**；左右摇杆都解。
 - 时间由外部传入（`now_ms`）：`arm_pose` / `arm_joint` / `motor` 内部不读 `HAL_GetTick`。
 - 调试统计（`ps2_debug`、`motor_status`）不参与控制决策。
 
 ---
 
-## 5. 操作
+## 5. 操作（v0.4：单模式）
 
 采用 O 型麦轮布局。M1 左前、M2 右前、M3 右后、M4 左后；轮位与极性都在 `Include/car_config.hpp`
 （`kMotorWheel` / `kMotorPolarity`）。
 
-**模式**：`Start` 进模式一（底盘，上电默认），`Select` 进模式二（机械臂）。
-两个键都是直接入口、各自幂等，不是 toggle；急停锁定时不响应。
-
-**模式一：底盘**
+**没有模式切换**：底盘和机械臂同时受控，左手开车的同时右手随时摆臂。按键分工只有一张表：
 
 | 输入 | 行为 |
 | --- | --- |
-| 左摇杆 Y / X | 前进后退 / 左右平移，死区 16，满偏 100% |
-| `L2` / `R2` | 逆时针 / 顺时针原地自转（`kRotateDutyPercent` = 80；同按 = 相抵） |
-| 方向键 ↑↓←→ | 平移按钮备份（80%），覆盖左摇杆 |
+| **左摇杆 Y / X** | 底盘前进后退 / 左右平移，死区 16，满偏 100% |
+| **L1 / R1** | 底盘原地左 / 右转（`kRotateDutyPercent` = 80；同按 = 相抵） |
+| **右摇杆 X / Y** | 机械臂末端笛卡尔速度：X 前伸 / 回收，Y 抬升 / 下压；平方律，满杆 50 mm/s，死区 8，松手即停 |
+| **L2 / R2** | 夹爪 松 / 紧（servo[2]，200 %/s；**正行程 = 张开**，同按 = 相抵） |
+| **← / →** | 腕 roll 左 / 右转（servo[3]，150 %/s；**正输出 = 左转**，同按 = 相抵） |
+| **Start** | 机械臂回中立位（= 上电姿态 (105.2, 38.3)），**不动夹爪和腕** |
+| `L3` + `R3` | 同按 ≥ 200 ms 锁定急停，再按一次解除 |
+| ↑ / ↓ / Select / △ / ○ / ╳ / □ | 无功能（v0.4 删掉了预设与模式键） |
 
-**模式二：机械臂精调**
+机械臂顶到边界不是停死，而是**贴边切向滑**（`Algorithm/src/arm_limit.cpp`：位置法沿摇杆方向缩步，
+缩到底才交给关节域沿墙滑）。正对墙推时该帧判"走不动"，串口 `lim=1`。
 
-| 输入 | 行为 |
-| --- | --- |
-| 左摇杆 X / Y | 末端笛卡尔速度：X 前伸/回收，Y 抬升/下压；平方律，满杆 50 mm/s，死区 8，松手即停。顶到边界不是停死，而是**贴边切向滑**（`Algorithm/src/arm_limit.cpp`） |
-| `L2` / `R2` | 夹爪 松 / 紧（servo[2]，200 %/s；正行程 = 张开） |
-| `L1` / `R1` | 腕 roll 逆 / 顺（servo[3]，150 %/s） |
-| ↑ / ↓ / ← / → | 预设 P0 / P1 / P2 / P3 |
-| △ / ○ / ╳ / □ | 预设 P4 / P5 / P6 / P7 |
-
-预设 P0~P7 的具体坐标见 `arm_config.hpp` 的 `kPoses`。扳机是开关量（报文只解按键位，没有压力字节），夹爪与腕只能恒速动，行程靠按住时长。
-摇杆与扳机**可以同帧并行**：左手摆位的同时右手开合夹爪。
+扳机与方向键都是**开关量**（报文只解按键位，没有压力字节），夹爪与腕只能恒速动，行程靠按住时长。
 
 **急停与失效**
 
 - `L3` + `R3` 同按 ≥ 200 ms 锁定急停，再按一次解除；两键必须先都松开才能再次触发。
-- 急停期间：底盘停转、机械臂冻结在当前姿态，`Start`/`Select`/预设全部不响应；
+- 急停期间：底盘停转、机械臂冻结在当前姿态（不回中、不松爪），`Start` / 夹爪 / 腕全部不响应；
   停机期间按下的键不会被记住，解除后不会补执行。
 - 手柄断线或有效报文超时 100 ms：电机停止，机械臂保持当前姿态（不回中）。
 - 板上 Key（PA12）去抖 20 ms，按一次锁定、再按一次解除，锁定时底盘停止输出。
@@ -180,21 +179,23 @@ ps2_update() ─► ps2_read() ─► mode_control_update(frame, now) ─┬─�
 USART3（PC10），115200 8N1，每 500 ms 四行：
 
 ```
-PS2 online=1 mode=73 op=ARM keys=0000 LX=128 LY=128 M=0,0,0,0 STOP=0 KEY=0 bad=0
+PS2 online=1 mode=73 keys=0000 LX=128 LY=128 RX=128 RY=128 M=0,0,0,0 STOP=0 KEY=0 bad=0
 PID4 target=0 ticks=0 pwm=0 stalled=0
 M4HW-v1 req=0 ccr=1500 arr=65535 run=1 en=1 moe=1 oc=6 pa11=0 pb10=0 pb11=0 out=0,0 map=1A045
 ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=1 lim=0 wall=0 poses=0x00 bu=0
 ```
 
-- `mode=` 是 PS2 协议模式字（0x41 绿灯数字 / 0x73 红灯模拟 / 0x79 双震动），`op=` 才是操作模式（DRV/ARM）。
+- `mode=` 是 PS2 协议模式字（0x41 绿灯数字 / 0x73 红灯模拟 / 0x79 双震动）。
+  v0.4 起没有操作模式，`op=` 已删。
+- `LX/LY` 是左摇杆（底盘）、`RX/RY` 是右摇杆（机械臂）的原始 0..255 值，中位 128 ——
+  上电第一件事就是看这四个数，确认极性与死区。
 - `keys=` 是按键位图（低 16 位，1 = 按下），`bad=` 是校验失败的帧数，`STOP=` 是停车状态（急停 latch 或断线），
   `KEY=` 是板载 Key 去抖后的电平。
 - `PID4` 是 M4 的闭环状态；`M4HW-v1` 是 TIM1/GPIO 的实配寄存器，用来对照「请求的占空比 vs 寄存器里真的是多少」。
-- `S1..S4` 位置固定；`xy` 是 FK 回算的当前末端，`tgt` 是本帧解算用的目标，
+- `S1..S4` 位置固定（标定手法依赖它）；`xy` 是 FK 回算的当前末端，`tgt` 是本帧解算用的目标，
   `th` 是连杆角；`ok`/`lim`/`wall` 三个**独立**标志：`ok=1` 精确命中（没缩步没裁角）、
-  `lim=1` 一步都走不动（正对墙 / 墙角，整帧未下发）、`wall=1` 顶住边界但还在走
-  （缩步 / 沿边切向滑，已下发）；
-  `poses` 是上电自检失败的预设位掩码（`0x00` = 八条全好）；
+  `lim=1` 一步都走不动（正对墙 / 墙角，整帧未下发）、`wall=1` 顶住边界但还在走（缩步 / 切向滑，已下发）；
+  `poses` 是上电自检（`bit0` = 中立位不可用，`0x00` = 可以按 Start）；
   `bu=1` 表示这是 `ARM_BRINGUP` 标定版（正常版恒 0，标完看到 1 就是烧错了）。
 
 ---
@@ -207,18 +208,20 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 
 | 项 | 现值 | 位置 | 怎么拿 |
 | --- | --- | --- | --- |
-| `upper_mm` / `fore_mm` | 76 / 40.08 | `kGeom` | 卡尺量两段**轴心距** |
+| `upper_mm` / `fore_mm` | 76 / 40.08 | `kGeom` | 卡尺量两段**轴心距**（末端 = 腕点） |
 | `shoulder.zero_deg` | 90.0 | `kGeom` | **必须是行程中点**：θ1∈[7.10,172.90] ⇒ 竖直向上 = 0% |
 | `elbow.zero_deg` | 45.0 | `kGeom` | **必须是行程中点**：θ2∈[−42,+132] ⇒ 半折 = 0% |
 | `shoulder/elbow.deg_per_percent` | 0.9 | `kGeom` | `ARM_BRINGUP` 推到两个点（如 +30 / +60），角度差 = k，带符号 |
-| `shoulder.range_min/max_deg` | **7.10 / 172.90** | `kGeom` | 底盘接触角 `asin(1/14)=4.10°` + 3° 余量。**0°/180° 是大臂躺在底盘上，根本到不了**（D-2，`kShoulderContactDeg` / `kStopBackoffDeg` 派生） |
+| `shoulder.range_min/max_deg` | **7.10 / 172.90** | `kGeom` | 底盘接触角 `asin(1/14)=4.10°` + 3° 余量。**0°/180° 是大臂躺在底盘上，根本到不了**（`kShoulderContactDeg` / `kStopBackoffDeg` 派生） |
 | `elbow.range_min/max_deg` | **−42 / +132** | `kGeom` | 舵机 180° 行程两端各退 3°；前超伸 42°／后折叠 132°，内半径按侧不同 |
 | `elbow_sign` | +1 | `kGeom` | 高肘（上吊）；+1 取肘点更高的一支，−1 整体镜像 |
 | `kWorkspace` | 70/116, −20/85 | `arm_config.hpp` | **软边界**：框内靠圆环钳位投影到弧带上 |
-| `kPoses[8]` | 8 条占位坐标 | `arm_config.hpp` | 笛卡尔摆到工位，抄串口 `xy=` 与 `S1..S4` |
-| 夹爪正负方向 | 正 = 张开 | `kPoses` | 标定第一件事：点 `L2`/`R2` 看方向，反了 8 条表全反号 |
-| `sag_mm_per_100mm` | 0（关闭） | `kMotion` | 水平位测下垂：`下垂 mm / (x/100)` |
-| `cart_speed_mm_per_second` | 50 | `kMotion` | 手感，满杆末端速度 |
+| `kPoses[1]` | 中立位 (105.2, 38.3) | `arm_config.hpp` | **只留 xy 一条**，等于上电点（`kZeroPercent` 的 FK）；按 Start 回这里 |
+| `kZeroPercent[4]` | −66 / −86 / 0 / 0 | `arm_pose.cpp` | 上电四路行程（S1/S2 落在中立位，S3/S4 居中） |
+| 夹爪正负方向 | 正 = 张开 | `mode_control.cpp` | 标定第一件事：按 `L2`/`R2` 看方向，反了改 `gripper += 100` 的符号 |
+| 腕正负方向 | 正 = 左转 | `mode_control.cpp` | `kWristLeftPercent = +100`；实物反了就对调这两行 |
+| `sag_mm_per_100mm` | 0（关闭） | `kMotion` | 水平位测下垂：`下垂 mm / (x/100)`；作用在中立位/坐标入口的目标点上 |
+| `cart_speed_mm_per_second` | 50 | `kMotion` | 手感，右摇杆满偏时的末端速度 |
 | `slew_percent_per_second` | 300 | `kMotion` | 关节插值限速（编译期要过 4 倍余量自检） |
 | `settle_percent` | 1.0 | `kMotion` | `at_target` 容差 |
 | `jog_percent_per_second[4]` | 150/150/200/150 | `kMotion` | 肩/肘（占位）/夹爪/腕 |
@@ -228,13 +231,13 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 `kJointLimits` 不手填：由 `percent_of()` 从角度限位在编译期派生。改角度限位即可，别维护第二套百分比。
 
 标定顺序：**量连杆 → 定零点 → 定比例 → 定限位 → 校验模型（推到 (105.2,38.3) 目测偏差 < 5 mm）
-→ 填预设 → 上电不碰手柄看 `poses=0x00`**。
+→ 上电不碰手柄看 `poses=0x00` → 按 Start 确认回到同一个姿态**。
 
 `arm_config.hpp` 末尾有一整套 `static_assert`：连杆为正、`|L1−L2| > 10`、限位不越 ±100、
-`zero == 行程中点`、角度跨度 ≤ 200%、工作区边界合理、`x_max ≤ L1+L2`、`slew_ok()`、预设全在工作区内。
-**改了几何/限位/工作区，8 条预设要一起改**（并把 `sim/arm_core.js` 的默认几何同步），
+`zero == 行程中点`、角度跨度 ≤ 200%、工作区边界合理、`x_max ≤ L1+L2`、`slew_ok()`、中立位在工作区内。
+**改了几何/限位/工作区，中立位坐标要一起改**（并把 `sim/arm_core.js` 的默认几何同步），
 否则直接编不过 —— 这是保护，不是麻烦。改完跑 `node sim/verify/struct_limit.js`：
-它会拿 `arm_config.hpp` 的真值重算内半径、弧带厚度和 8 条预设的限位余量。
+它会拿 `arm_config.hpp` 的真值重算内半径、弧带厚度与限位余量。
 
 ### 7.2 底盘速度闭环（`Device/src/motor.cpp:17-27`）
 
@@ -266,10 +269,9 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 | `kMecanumLayout` | O | 滚子 O 型；改 X 型会翻平移符号 |
 | `kMotorWheel[4]` / `kMotorPolarity[4]` | 见文件 | 轮位与极性；`mix_drive` 有编译期校验（每个轮位恰好一次、极性 ±1） |
 | `kMaxDutyPercent` | 100 | 摇杆满偏占空比 |
-| `kButtonDutyPercent` | 80 | 方向键备份平移占空比 |
 | `kAxisDeadzone` | 16 | 底盘摇杆死区（原始 0..255 计数） |
 | `kArmDeadzone` | 8 | 机械臂摇杆死区（要更精细） |
-| `kRotateDutyPercent` | 80 | L2/R2 自转占空比 |
+| `kRotateDutyPercent` | 80 | L1/R1 自转占空比 |
 | `kEstopHoldMs` | 200 | L3+R3 同按判定的时间窗 |
 
 ---
@@ -287,20 +289,44 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 - `.clang-format` 只格式化自编代码；`Core/`、`Drivers/` 的生成代码不要批量格式化。
 - 手工入口只写在 `USER CODE` 区域。重新 CubeMX 生成后要复查：SPI2 的 Mode 3 / LSB / 256 分频
   （`main.c` 的 `USER CODE SPI2_Init 2` 有强制纠正段）、PS2_CS 初值、Key 上拉。
+- **按键分工只写在 `Task/src/mode_control.cpp`**：换键位改那一个文件，别让按键判断漏到
+  `arm_pose` / `drive_control` 里去（`drive_control` 只认"给定 forward/strafe/rotation"）。
 - `build/` 是可重新生成的本机输出，不进版本库。
 
-### 主机侧数值自检（不上板）
+### 主机侧自检（不上板）
 
 `Algorithm/`、`Device/arm_joint`、`Device/arm_pose`、`Task/mode_control` 都不 include HAL，
-可以直接用 PC 的 g++ 编成 exe 跑：
+可以直接用 PC 的 g++ 编成 exe 跑。三套现成的（都在仓库根目录执行）：
 
 ```bash
-g++ -std=c++14 -I Include -I Algorithm/inc -I Device/inc -I Driver/inc -I Task/inc \
-    your_probe.cpp \
-    Task/src/mode_control.cpp Device/src/arm_pose.cpp Device/src/arm_joint.cpp \
-    Device/src/drive_control.cpp Device/src/ps2_protocol.cpp Device/src/arm_control.cpp \
-    Algorithm/src/arm_kinematics.cpp Algorithm/src/arm_limit.cpp Algorithm/src/pid.cpp -o probe.exe
+# ① 按键映射与整条控制链：8 项断言（左/右摇杆、L1R1、L2R2、←→、Start、旧预设键无效）
+g++ -std=c++14 -O2 -I Include -I Algorithm/inc -I Device/inc -I Task/inc sim/verify/keymap_test.cpp Task/src/mode_control.cpp Device/src/arm_pose.cpp Device/src/arm_joint.cpp Device/src/drive_control.cpp Device/src/arm_control.cpp Device/src/ps2_protocol.cpp Algorithm/src/arm_kinematics.cpp Algorithm/src/arm_limit.cpp -o sim/verify/keymap_test.exe && ./sim/verify/keymap_test.exe
+
+# ② 摇杆限位（贴边滑）：与 sim/stick_limit.js 逐帧对拍 + 6 项行为断言
+g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_limit.cpp Algorithm/src/arm_kinematics.cpp sim/verify/stick_probe.cpp -o sim/verify/stick_probe.exe && node sim/verify/stick_port_test.js
+
+# ③ IK 逐点对拍（arm_core.js ↔ arm_kinematics.cpp）
+g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_kinematics.cpp sim/verify/probe.cpp -o sim/verify/probe.exe && node sim/verify/compare.js
 ```
 
-用它验：正逆解互逆误差、8 条预设可达性、限位与 jog 会不会被绕过、急停/断线时是否真的冻结。
-比上车试便宜得多。
+最近一次结果：① 8/8 PASS ② 6/6 PASS ③ PASS。
+比上车试便宜得多：正逆解互逆误差、限位与 jog 会不会被绕过、急停/断线时是否真的冻结，都在这里验。
+
+---
+
+## 9. v0.4 改了什么（不兼容项）
+
+| 项 | v0.3 | v0.4 |
+| --- | --- | --- |
+| 操作模式 | `Start` = 底盘、`Select` = 机械臂，两套互斥 | **单模式**：底盘 + 机械臂同时受控；`OperationMode`、`Select`、`ControlOutput::mode` 全删 |
+| 机械臂摇杆 | 左摇杆（与底盘共用） | **右摇杆**（`right_x` / `right_y`，报文 5/6 字节重新解码） |
+| 底盘自转 | `L2` / `R2` | **`L1` / `R1`**（扳机让给夹爪） |
+| 夹爪 | `L2` / `R2`（仅机械臂模式） | `L2` / `R2`（一直可用） |
+| 腕 roll | `L1` / `R1`（仅机械臂模式） | **`←` / `→`**（正输出 = 左转） |
+| 预设姿态 | `kPoses[8]`，8 个按键各绑一条，带 gripper/wrist 两列 | **`kPoses[1]`**：只有中立位 xy；`Pose` 枚举、绑定表、`arm_pose_request(index)` 全删，新增 `arm_pose_request_neutral()` |
+| 方向键 ↑↓ | 平移按钮备份（80%） | 无功能（`kButtonDutyPercent` 一并删除） |
+| 串口 | `op=DRV/ARM` | 删 `op=`，加 `RX/RY` |
+| 上电点 / 中立位 | 上电点 = `kPoses[Home]` | 上电点 = `kZeroPercent`，Start 回到 `kPoses[0]`（同一点） |
+
+删掉的东西没有留兼容层：想恢复"按模式切换"，得把 `OperationMode`、两个入口与
+`ControlOutput::mode` 一起加回来 —— 也就是反向做一次这张表。

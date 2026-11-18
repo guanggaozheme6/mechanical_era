@@ -18,15 +18,14 @@
 /**
  * @brief 上报一条 PS2 + 底盘状态（500 ms 一次）
  * @details 顺手把 M4 的 PID 与 TIM1/GPIO 实配也打出来，方便逐项对照"请求的占空比 vs
- *          实际寄存器"。mode= 是 PS2 协议模式字，op= 才是操作模式。
+ *          实际寄存器"。mode= 是 PS2 协议模式字；v0.4 起没有操作模式，所以不再打 op=。
  * @param frame 本帧手柄数据
  * @param command 本帧实际下发的四路电机指令
  * @param emergency_stop 板载 Key 的急停状态
  * @param key_pressed 板载 Key 当前电平（去抖后）
- * @param arm_mode true 打 op=ARM，false 打 op=DRV
  */
 void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_stop,
-                   bool key_pressed, bool arm_mode);
+                   bool key_pressed);
 
 /**
  * @brief 上报一条机械臂状态（500 ms 一次）

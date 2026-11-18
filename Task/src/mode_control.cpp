@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file           : mode_control.cpp
- * @brief          : 模式状态机、按键边沿与预设分发实现（Task 层）
+ * @brief          : 按键分发与急停组合实现（Task 层，单模式）
  ******************************************************************************
  */
 
@@ -10,10 +10,27 @@
 #include "arm_pose.hpp"
 #include "car_config.hpp"
 
+// v0.4：没有模式切换，底盘和机械臂同时受控。按键分工只在这一个文件里定：
+//   左摇杆 (left_x/left_y)      → drive_from_ps2（底盘平移）
+//   L1 / R1                     → drive_from_ps2（底盘原地左/右转）
+//   右摇杆 (right_x/right_y)    → arm_pose_set_cart_velocity（末端速度）
+//   L2 / R2                     → arm_pose_joint_jog(2)：夹爪 松/紧
+//   ← / →                       → arm_pose_joint_jog(3)：腕 roll 正=左转 / 负=右转
+//   Start                       → arm_pose_request_neutral（回中立位）
+//   L3 + R3                     → 急停锁定 / 解除
+//   ↑ ↓ Select △ ○ ╳ □          → 无功能（v0.4 删掉了预设与模式键）
+
 /* Private constants ---------------------------------------------------------*/
 namespace {
 
-OperationMode g_mode = OperationMode::Drive;
+/** @brief 夹爪 / 腕 roll 在关节层里的通道号（与 arm_config::k*Servo 一致） */
+constexpr unsigned kGripperAxis = 2U;
+constexpr unsigned kWristAxis = 3U;
+
+/** @brief 腕 roll 方向约定：**正输出 = 左转**（实物反了就把这两个符号对调） */
+constexpr int kWristLeftPercent = 100;
+constexpr int kWristRightPercent = -100;
+
 bool g_latched_stop = false; // L3+R3 锁定的急停，再按一次解除
 
 // 边沿检测只用「上一帧按键位图」一个变量
@@ -23,31 +40,6 @@ uint16_t g_prev_buttons = 0;
 bool g_combo_arming = false;
 bool g_combo_fired = false;
 uint32_t g_combo_since_ms = 0;
-
-/* Private types -------------------------------------------------------------*/
-
-/**
- * @brief 一条预设绑定
- * @note pose 就是 arm_config::Pose 的索引
- */
-struct PresetBind {
-    Ps2Button button;
-    unsigned pose;
-};
-
-constexpr PresetBind kPresetBinds[] = {
-    {Ps2Button::Up, 0},       // ↑ P0 Home
-    {Ps2Button::Down, 1},     // ↓ P1 Ready
-    {Ps2Button::Left, 2},     // ← P2 Reach
-    {Ps2Button::Right, 3},    // → P3 Retract
-    {Ps2Button::Triangle, 4}, // △ P4 Lift
-    {Ps2Button::Circle, 5},   // ○ P5 Carry
-    {Ps2Button::Cross, 6},    // ╳ P6 Place
-    {Ps2Button::Square, 7},   // □ P7 Drop
-};
-
-constexpr unsigned kPresetCount = sizeof(kPresetBinds) / sizeof(kPresetBinds[0]);
-static_assert(kPresetCount == 8U, "预设绑定表与 8 个按键不一致");
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -100,31 +92,24 @@ void update_estop_combo(const Ps2Frame &frame, uint32_t now_ms) {
 }
 
 /**
- * @brief 机械臂模式的按键与摇杆处理
+ * @brief 机械臂输入：右摇杆给末端速度，扳机给夹爪，左右方向键给腕 roll
+ * @details 右摇杆推右 = 前伸（+x），推上 = 抬升（+y）；平方律与合速度归一化在 arm_pose。
  * @param frame 手柄帧
+ * @param hold_velocity true 表示本帧压住摇杆速度（按了 Start，或手柄退回数字模式）
  */
-void update_arm_mode(const Ps2Frame &frame) {
-    bool requested = false;
-    for (unsigned i = 0; i < kPresetCount; ++i) {
-        if (edge(frame, kPresetBinds[i].button)) {
-            arm_pose_request(kPresetBinds[i].pose);
-            requested = true;
-        }
-    }
-
-    if (requested || !frame.analog) {
+void update_arm_input(const Ps2Frame &frame, bool hold_velocity) {
+    if (hold_velocity || !frame.analog) {
         arm_pose_set_cart_velocity(0.0F, 0.0F);
     } else {
-        const int forward = arm_axis_percent(frame.left_x, false);
-        const int lift = arm_axis_percent(frame.left_y, true);
+        const int forward = arm_axis_percent(frame.right_x, false);
+        const int lift = arm_axis_percent(frame.right_y, true);
         float vx = 0.0F;
         float vy = 0.0F;
         arm_pose_stick_velocity(forward, lift, vx, vy);
         arm_pose_set_cart_velocity(vx, vy);
     }
 
-    // 夹爪 servo[2]：L2 松 / R2 紧；腕 roll servo[3]：L1 逆 / R1 顺
-    // 方向约定以gripper 正 = 张开(松)、负 = 夹紧
+    // 夹爪 servo[2]：扳机 L2 松（正 = 张开）/ R2 紧；两键同按相抵。
     int gripper = 0;
     if (pressed(frame, Ps2Button::L2)) {
         gripper += 100;
@@ -133,18 +118,19 @@ void update_arm_mode(const Ps2Frame &frame) {
         gripper -= 100;
     }
     if (gripper != 0) {
-        arm_pose_joint_jog(2U, gripper);
+        arm_pose_joint_jog(kGripperAxis, gripper);
     }
 
+    // 腕 roll servo[3]：← 左转 / → 右转；两键同按相抵。
     int wrist = 0;
-    if (pressed(frame, Ps2Button::L1)) {
-        wrist -= 100;
+    if (pressed(frame, Ps2Button::Left)) {
+        wrist += kWristLeftPercent;
     }
-    if (pressed(frame, Ps2Button::R1)) {
-        wrist += 100;
+    if (pressed(frame, Ps2Button::Right)) {
+        wrist += kWristRightPercent;
     }
     if (wrist != 0) {
-        arm_pose_joint_jog(3U, wrist);
+        arm_pose_joint_jog(kWristAxis, wrist);
     }
 }
 
@@ -153,11 +139,10 @@ void update_arm_mode(const Ps2Frame &frame) {
 /* Exported functions --------------------------------------------------------*/
 
 /**
- * @brief 初始化模式状态机与机械臂
+ * @brief 初始化按键状态机与机械臂
  * @param now_ms 当前毫秒时基
  */
 void mode_control_init(uint32_t now_ms) {
-    g_mode = OperationMode::Drive;
     g_latched_stop = false;
     g_prev_buttons = 0;
     g_combo_arming = false;
@@ -167,11 +152,12 @@ void mode_control_init(uint32_t now_ms) {
 }
 
 /**
- * @brief 每轮主循环调用一次：边沿检测、急停组合、模式分发
+ * @brief 每轮主循环调用一次：边沿检测、急停组合、按键分发
  * @details 只产出"意图"；平方律、限位、积分都在 arm_pose。
+ *          急停 / 断线时底盘停、机械臂冻结在当前姿态（不回中、不松爪）。
  * @param frame 本帧手柄数据
  * @param now_ms 当前毫秒时基
- * @return 本帧的底盘与机械臂指令（断线时停止并保持机械臂姿态）
+ * @return 本帧的底盘与机械臂指令
  */
 ControlOutput mode_control_update(const Ps2Frame &frame, uint32_t now_ms) {
     ControlOutput output;
@@ -180,34 +166,23 @@ ControlOutput mode_control_update(const Ps2Frame &frame, uint32_t now_ms) {
     update_estop_combo(frame, now_ms);
     const bool stopped = g_latched_stop || !frame.connected;
 
-    // 2. 模式入口：Start 切 Drive，Select 切 Arm。切换时机械臂保持姿态。
-    const bool start_edge = edge(frame, Ps2Button::Start);
-    const bool select_edge = edge(frame, Ps2Button::Select);
-    if (!stopped && start_edge && g_mode != OperationMode::Drive) {
-        g_mode = OperationMode::Drive;
-        arm_pose_set_cart_velocity(0.0F, 0.0F); // 机械臂保持姿态，只是不再接受新速度
-        g_prev_buttons = frame.buttons;
-    } else if (!stopped && select_edge && g_mode != OperationMode::Arm) {
-        g_mode = OperationMode::Arm;
-        arm_pose_set_cart_velocity(0.0F, 0.0F);
-        g_prev_buttons = frame.buttons;
-    }
+    // 2. Start 回中立位：唯一保留的姿态动作（冻结时不响应）。
+    const bool neutral_edge = !stopped && edge(frame, Ps2Button::Start);
 
-    // 3. 按模式分发
-    if (g_mode == OperationMode::Drive) {
-        output.drive = stopped ? DriveCommand{} : drive_from_ps2(frame);
-    } else {
+    // 3. 底盘与机械臂各走各的，同一帧可以同时动（左手开车、右手摆臂）。
+    if (stopped) {
         output.drive = DriveCommand{};
-        if (!stopped) {
-            update_arm_mode(frame);
+        output.arm = arm_pose_hold(now_ms);
+    } else {
+        output.drive = drive_from_ps2(frame);
+        if (neutral_edge) {
+            arm_pose_request_neutral();
         }
+        update_arm_input(frame, neutral_edge);
+        output.arm = arm_pose_update(now_ms);
     }
-
-    // 4. 机械臂输出：急停/断线时保持当前位置，避免突然甩动或掉落。
-    output.arm = stopped ? arm_pose_hold(now_ms) : arm_pose_update(now_ms);
     output.arm_fb = arm_pose_feedback();
 
-    output.mode = g_mode;
     output.stopped = stopped;
     g_prev_buttons = frame.buttons;
     return output;

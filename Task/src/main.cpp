@@ -56,8 +56,7 @@ extern "C" void main_task() {
 
         const uint32_t report_ms = kReportMs;
         if (HAL_GetTick() - last_report >= report_ms) {
-            report_status(frame, drive, stopped, key_pressed,
-                          output.mode == OperationMode::Arm);
+            report_status(frame, drive, stopped, key_pressed);
             report_arm(output.arm, output.arm_fb);
             last_report = HAL_GetTick();
         }

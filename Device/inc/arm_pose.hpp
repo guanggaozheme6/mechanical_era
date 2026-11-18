@@ -13,10 +13,10 @@
 #include <cstdint>
 
 // 这一层只做"谁调谁"：
-//   预设/坐标请求 → arm_kinematics::solve_xy → arm_joint::set_target
-//   左摇杆速度   → FK(当前) → arm_limit::tangent_step（位置法 + 关节域贴边滑）→ set_target
-//   夹爪/腕速度  → arm_joint::set_jog（不经 IK）
-//   每帧          → arm_joint::bank_update → ArmCommand
+//   中立位/坐标请求 → arm_kinematics::solve_xy → arm_joint::set_target
+//   右摇杆速度      → FK(当前) → arm_limit::tangent_step（位置法 + 关节域贴边滑）→ set_target
+//   夹爪/腕速度      → arm_joint::set_jog（不经 IK）
+//   每帧            → arm_joint::bank_update → ArmCommand
 // 不含三角函数公式、不含积分公式、不含限位表。
 //
 // 没有"单关节 jog 模式"：轴 0/1 由笛卡尔解算独占驱动，只留下夹爪(2) 和腕 roll(3)
@@ -40,25 +40,25 @@ struct ArmFeedback {
     bool limited = false;      // 一步都走不动（正对墙 / 墙角），整帧未下发
     bool at_wall = false;      // 顶住边界但仍在走（缩步 / 切向滑），已下发
     bool bringup = false;      // 当前固件是 ARM_BRINGUP 标定版
-    unsigned bad_poses = 0U;   // 上电自检失败的预设位掩码
+    unsigned bad_poses = 0U;   // 上电自检：bit0 = 中立位不可用（v0.4 只有这一条）
 };
 
 /* Exported functions prototypes ---------------------------------------------*/
 
 /**
- * @brief 初始化：记时基、四路归零到中位、对 8 条预设各做一次 IK 校验
+ * @brief 初始化：记时基、四路归零到中位、对中立位做一次 IK 校验
  * @param now_ms 当前毫秒时基
  */
 void arm_pose_init(uint32_t now_ms);
 
 /**
- * @brief 请求第 index 条预设（0..7，见 arm_config::Pose）
- * @details 索引即 mode_control 绑定表的 pose 字段，表驱动分发。
- *          坐标越界时会被钳到边界照发；只有该方位 θ1 越限、或该条上电自检没过时才不动。
- * @note 索引越界、或该条上电自检失败时不做任何动作，失败原因进 ArmFeedback。
- * @param index 预设索引 0..7
+ * @brief 回到中立位（Start 键）
+ * @details 唯一保留的姿态动作：目标是 `arm_config::kPoses[0]`，等于上电点。
+ *          只写两个解算轴（大臂 / 小臂），**不动夹爪和腕** —— 手上夹着东西按 Start
+ *          不会把它松掉或甩出去。坐标越界时钳到边界照发；该方位 θ1 越限、
+ *          或上电自检就没过时整帧不动，原因进 ArmFeedback。
  */
-void arm_pose_request(unsigned index);
+void arm_pose_request_neutral();
 
 /**
  * @brief 绝对坐标请求（动作序列 / 上位机）
@@ -138,6 +138,6 @@ ArmFeedback arm_pose_feedback();
 
 /**
  * @brief 上电自检结果
- * @return bit i = 第 i 条预设不可用（0 = 八条全好）
+ * @return bit0 = 中立位不可用（0 = 中立位可达，可以按 Start）
  */
 unsigned arm_pose_bad_pose_mask();

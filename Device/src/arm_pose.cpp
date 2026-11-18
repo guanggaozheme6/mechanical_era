@@ -243,7 +243,7 @@ ArmCommand make_command() {
 /* Exported functions --------------------------------------------------------*/
 
 /**
- * @brief 初始化：记时基、四路归零、8 条预设各做一次 IK 自检
+ * @brief 初始化：记时基、四路归零、中立位做一次 IK 自检
  * @details 标定版（ARM_BRINGUP）走另一条路：直接给 kBringupPercent，跳过全部钳位。
  * @param now_ms 当前毫秒时基
  */
@@ -279,28 +279,24 @@ void arm_pose_init(uint32_t now_ms) {
 }
 
 /**
- * @brief 请求第 index 条预设
- * @details 进门先清笛卡尔速度；越界或该条自检没过则拒绝下发并置 at_wall。
- * @param index 预设索引 0..7
+ * @brief 回到中立位（Start 键）
+ * @details 先清笛卡尔速度（绝对目标是「去一个点」，不能先按摇杆方向挪一格再被拉回），
+ *          再走和绝对坐标入口同一条钳位链路。**只写 S1/S2**：夹爪与腕保持用户当前值，
+ *          否则夹着东西按 Start 会松手或甩腕。
  */
-void arm_pose_request(unsigned index) {
+void arm_pose_request_neutral() {
     if (kBringup) {
         return;
     }
-    // 先清掉本帧的笛卡尔速度：预设是绝对目标，不能先按摇杆方向挪一格再被拉回。
     g_cart_vx = 0.0F;
     g_cart_vy = 0.0F;
 
-    if (index >= kPoseCount) {
-        g_fb.at_wall = true;
-        return;
-    }
-    if ((g_bad_pose_mask & (1U << index)) != 0U) {
-        g_fb.at_wall = true; // 该条上电自检就没过，拒绝下发
+    if ((g_bad_pose_mask & 1U) != 0U) {
+        g_fb.at_wall = true; // 上电自检就没过（中立位够不到），拒绝下发
         return;
     }
 
-    const arm_config::Preset &pose = kPoses[index];
+    const arm_config::Preset &pose = kPoses[0];
     float applied_x = 0.0F;
     float applied_y = 0.0F;
     if (!apply_xy(pose.x_mm, pose.y_mm, applied_x, applied_y)) {
@@ -308,8 +304,6 @@ void arm_pose_request(unsigned index) {
     }
     g_fb.target_x_mm = applied_x;
     g_fb.target_y_mm = applied_y;
-    arm_joint::set_target(g_bank.channel[arm_config::kGripperServo], pose.gripper_percent);
-    arm_joint::set_target(g_bank.channel[arm_config::kWristServo], pose.wrist_percent);
 }
 
 /**

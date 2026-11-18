@@ -17,7 +17,8 @@ sim/
     ├── stick_probe.cpp 把真实的 arm_limit.cpp 编成对拍探针（固件几何）
     ├── stick_port_test.js  固件贴边滑的 6 条断言 + 与 JS 逐帧对拍
     ├── struct_probe.cpp    把 arm_config.hpp 的 kGeom/kWorkspace/kPoses 打出来
-    └── struct_limit.js     结构限位取证：接触角 → 3° 余量 → 内半径/弧带/8 条预设（D-2）
+    ├── struct_limit.js     结构限位取证：接触角 → 3° 余量 → 内半径/弧带/8 条预设（D-2）
+    └── keymap_test.cpp     v0.4 按键映射的主机侧验收（真代码，不属仿真；8 条断言）
 ```
 
 ---
@@ -388,3 +389,19 @@ node sim/verify/struct_limit.js
 - **干涉只查线段**（同 §7），固件侧还没有这套判据。
 - **没做速度环 / 加速度限幅**：一步给多少就走多少，靠舵机 slew 兜底。顶到限位的瞬间如果
   听到「咔」一声，把 `slew_percent_per_second` 调小。
+
+---
+
+## 9. 这个页面与 v0.4 固件的关系（别混）
+
+| | 仿真页 | 固件 v0.4 |
+| --- | --- | --- |
+| 末端 | 夹取点（`L2Σ = fore + tool = 168.43`） | **腕点**（`fore_mm = 40.08`），没有工具延伸 |
+| 可达圈 | 指尖 228.58 ~ 244.43 | 腕点 109.13 ~ 116.08（右半平面） |
+| 预设表 | 8 条 × 4 列（x/y/grip/wrist），**规划工具** | `kPoses[1]`：只有中立位 xy |
+| 干涉 | `collide.js` 线段采样，硬约束 | **没有**（`Debug.md` D-4） |
+| 摇杆 | 页面自己的圆盘（推杆量 → 平方律 → 限位策略） | 右摇杆 → 同一套平方律 + `arm_limit` |
+
+所以：**页面里那 8 条预设是拿来挑坐标的，不是固件里的表**。往固件抄坐标只抄中立位
+（`kPoses[0]`，必须等于 `kZeroPercent` 的 FK），其它坐标当参考。导出的 `arm_config_snippet.hpp`
+还是 4 列旧格式 —— 见 `Debug.md` D-5。
