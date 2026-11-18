@@ -5,9 +5,13 @@
  *                   从 stdin 读点，把解算结果按行打到 stdout
  ******************************************************************************
  *
- * 用法：probe <ik|fk> <L1> <L2> <elbow_sign>
+ * 用法：probe <ik|fk> <L1> <L2> <elbow_sign> [dpp1 zero1 min1 max1 dpp2 zero2 min2 max2]
  *   ik 模式：每行 "x y"   → 输出 "x y θ1 θ2 %1 %2 reachable limited"
  *   fk 模式：每行 "p1 p2" → 输出 "x y"
+ *
+ * 限位不再写死在本文件：sim/verify/compare.js 从 arm_core.js 的默认几何（= arm_config.hpp 的
+ * kGeom）抄 8 个数传进来。以前这里硬编码 0/180 与 −45/135，arm_config 一改限位，
+ * 对拍就悄悄跑在旧几何上 —— 那种漂移比不测更糟。
  *
  * 只为 sim/verify/compare.js 服务，不进固件构建。
  */
@@ -19,7 +23,9 @@
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        std::fprintf(stderr, "usage: probe <ik|fk> <L1> <L2> <elbow_sign>\n");
+        std::fprintf(stderr,
+                     "usage: probe <ik|fk> <L1> <L2> <elbow_sign> "
+                     "[dpp1 zero1 min1 max1 dpp2 zero2 min2 max2]\n");
         return 2;
     }
     const bool fkMode = (std::strcmp(argv[1], "fk") == 0);
@@ -27,9 +33,19 @@ int main(int argc, char **argv) {
     arm_kinematics::Model model{};
     model.upper_mm = static_cast<float>(std::atof(argv[2]));
     model.fore_mm = static_cast<float>(std::atof(argv[3]));
-    model.shoulder = {90.0F, 0.9F, 0.0F, 180.0F};
-    model.elbow = {45.0F, 0.9F, -45.0F, 135.0F};
+    model.shoulder = {90.0F, 0.9F, 7.1F, 172.9F};  // 缺省 = 2026-11-18 的 kGeom 限位
+    model.elbow = {45.0F, 0.9F, -42.0F, 132.0F};
     model.elbow_sign = std::atoi(argv[4]);
+    if (argc >= 13) {
+        model.shoulder = {static_cast<float>(std::atof(argv[6])),
+                          static_cast<float>(std::atof(argv[5])),
+                          static_cast<float>(std::atof(argv[7])),
+                          static_cast<float>(std::atof(argv[8]))};
+        model.elbow = {static_cast<float>(std::atof(argv[10])),
+                       static_cast<float>(std::atof(argv[9])),
+                       static_cast<float>(std::atof(argv[11])),
+                       static_cast<float>(std::atof(argv[12]))};
+    }
 
     float a = 0.0F;
     float b = 0.0F;

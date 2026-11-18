@@ -43,6 +43,9 @@
   /**
    * @brief 默认几何（与 Include/arm_config.hpp 的 kGeom 一致）
    * @note foreMm 是腕点连杆，toolMm 是腕点到夹爪末端的延伸；真实小臂 = 两者之和。
+   * @note 限位两端各退 3°：θ1 的结构接触角是 4.10°（大臂贴底盘，见 sim/collide.js），
+   *       θ2 的边界是舵机自己的 ±100%。取证脚本 sim/verify/struct_limit.js 会拿
+   *       arm_config.hpp 的真值与这里对拍。
    */
   function defaultGeom() {
     return {
@@ -50,8 +53,8 @@
       foreMm: 40.08, // L2 肘轴 → 腕点（固件现值）
       toolMm: 128.35, // 腕点 → 夹爪末端
       elbowSign: 1, // +1 = 高肘（上吊）构型
-      shoulder: { zeroDeg: 90.0, degPerPercent: 0.9, minDeg: 0.0, maxDeg: 180.0 },
-      elbow: { zeroDeg: 45.0, degPerPercent: 0.9, minDeg: -45.0, maxDeg: 135.0 }
+      shoulder: { zeroDeg: 90.0, degPerPercent: 0.9, minDeg: 7.1, maxDeg: 172.9 },
+      elbow: { zeroDeg: 45.0, degPerPercent: 0.9, minDeg: -42.0, maxDeg: 132.0 }
     };
   }
 

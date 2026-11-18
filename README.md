@@ -66,7 +66,7 @@ CMake 按层加 `-I`。
 | M2 方向 A/B | PC2 / PC3 | 同上 |
 | M3 方向 A/B | PC4 / PC5 | 同上 |
 | M4 方向 A/B | PB10 / PB11 | 同上 |
-| M1 编码器 | PA15 (TIM2_CH1) / PB3 (CH2) | 需 `SWJ_NOJTAG` + TIM2 部分重映射 2，SWD 调试保留 |
+| M1 编码器 | PA15 (TIM2_CH1) / PB3 (CH2) | 需 `SWJ_NOJTAG` + TIM2 部分重映射 1（`TIM2_REMAP=01`），SWD 调试保留；全映射会撞 M4 方向脚 PB10/PB11 |
 | M2 编码器 | PA6 (TIM3_CH1) / PA7 (CH2) | |
 | M3 编码器 | PA0 (TIM5_CH1) / PA1 (CH2) | |
 | M4 编码器 | PB6 (TIM4_CH1) / PB7 (CH2) | |
@@ -208,11 +208,11 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 | 项 | 现值 | 位置 | 怎么拿 |
 | --- | --- | --- | --- |
 | `upper_mm` / `fore_mm` | 76 / 40.08 | `kGeom` | 卡尺量两段**轴心距** |
-| `shoulder.zero_deg` | 90.0 | `kGeom` | **必须是行程中点**：θ1∈[0,180] ⇒ 竖直向上 = 0% |
-| `elbow.zero_deg` | 45.0 | `kGeom` | **必须是行程中点**：θ2∈[−45,+135] ⇒ 半折 = 0% |
+| `shoulder.zero_deg` | 90.0 | `kGeom` | **必须是行程中点**：θ1∈[7.10,172.90] ⇒ 竖直向上 = 0% |
+| `elbow.zero_deg` | 45.0 | `kGeom` | **必须是行程中点**：θ2∈[−42,+132] ⇒ 半折 = 0% |
 | `shoulder/elbow.deg_per_percent` | 0.9 | `kGeom` | `ARM_BRINGUP` 推到两个点（如 +30 / +60），角度差 = k，带符号 |
-| `shoulder.range_min/max_deg` | 0 / 180 | `kGeom` | `ARM_BRINGUP` 逐 10% 加到顶住，回退 3° |
-| `elbow.range_min/max_deg` | −45 / 135 | `kGeom` | 前超伸 45°／后折叠 135°；内半径按侧不同 |
+| `shoulder.range_min/max_deg` | **7.10 / 172.90** | `kGeom` | 底盘接触角 `asin(1/14)=4.10°` + 3° 余量。**0°/180° 是大臂躺在底盘上，根本到不了**（D-2，`kShoulderContactDeg` / `kStopBackoffDeg` 派生） |
+| `elbow.range_min/max_deg` | **−42 / +132** | `kGeom` | 舵机 180° 行程两端各退 3°；前超伸 42°／后折叠 132°，内半径按侧不同 |
 | `elbow_sign` | +1 | `kGeom` | 高肘（上吊）；+1 取肘点更高的一支，−1 整体镜像 |
 | `kWorkspace` | 70/116, −20/85 | `arm_config.hpp` | **软边界**：框内靠圆环钳位投影到弧带上 |
 | `kPoses[8]` | 8 条占位坐标 | `arm_config.hpp` | 笛卡尔摆到工位，抄串口 `xy=` 与 `S1..S4` |
@@ -231,8 +231,10 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 → 填预设 → 上电不碰手柄看 `poses=0x00`**。
 
 `arm_config.hpp` 末尾有一整套 `static_assert`：连杆为正、`|L1−L2| > 10`、限位不越 ±100、
-工作区边界合理、`x_max ≤ L1+L2`、`slew_ok()`、预设全在工作区内。
-**改了几何或工作区，8 条预设要一起改**，否则直接编不过 —— 这是保护，不是麻烦。
+`zero == 行程中点`、角度跨度 ≤ 200%、工作区边界合理、`x_max ≤ L1+L2`、`slew_ok()`、预设全在工作区内。
+**改了几何/限位/工作区，8 条预设要一起改**（并把 `sim/arm_core.js` 的默认几何同步），
+否则直接编不过 —— 这是保护，不是麻烦。改完跑 `node sim/verify/struct_limit.js`：
+它会拿 `arm_config.hpp` 的真值重算内半径、弧带厚度和 8 条预设的限位余量。
 
 ### 7.2 底盘速度闭环（`Device/src/motor.cpp:17-27`）
 

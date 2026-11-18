@@ -20,7 +20,14 @@ uint16_t g_previous[kCount];
 /**
  * @brief 配置四路编码器引脚与复用
  * @details PA15/PB3 原本是 JTAG 引脚；关闭 JTAG，保留 SWD 下载与调试。
- *          TIM2 需要部分重映射才能落到 PA15/PB3。
+ *          TIM2 只有 **PARTIAL_1**（TIM2_REMAP=01）能把 CH1/CH2 落到 PA15/PB3：
+ *          - 00 / 10（PARTIAL_2）：CH1/ETR=PA0、CH2=PA1 —— 与 TIM5 的 M3 编码器
+ *            完全重复，M1 的 A/B 相根本不进定时器；
+ *          - 11（全映射）：CH1/CH2 对了，但 CH3/CH4 落到 PB10/PB11 —— M4 的方向脚；
+ *          - 01（PARTIAL_1）：CH1/ETR=PA15、CH2=PB3、CH3=PA2、CH4=PA3。编码器模式
+ *            只使能 CC1E/CC2E，CH3/CH4 不使能就不占引脚，PA2/PA3 仍归 USART2。
+ * @note 别改回 PARTIAL_2，也别用 __HAL_AFIO_REMAP_TIM2_ENABLE()（全映射）；
+ *       同理别顺手把 TIM2 的 CH3/CH4 打开（HAL_TIM_Encoder_Start 只开 CH1/CH2）。
  */
 void configure_pins() {
     __HAL_RCC_AFIO_CLK_ENABLE();
@@ -31,7 +38,8 @@ void configure_pins() {
 
     // PA15/PB3 原本是 JTAG 引脚；关闭 JTAG，保留 SWD 下载与调试。
     __HAL_AFIO_REMAP_SWJ_NOJTAG();
-    __HAL_AFIO_REMAP_TIM2_PARTIAL_2();
+    // PARTIAL_1 = 01：CH1/PA15、CH2/PB3（全映射会撞 M4 方向脚 PB10/PB11）。
+    __HAL_AFIO_REMAP_TIM2_PARTIAL_1();
 
     GPIO_InitTypeDef pins{};
     pins.Mode = GPIO_MODE_INPUT;

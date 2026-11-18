@@ -288,6 +288,7 @@
   </aside>
 </main>
 
+<script src="collide.js"></script>
 <script src="cube3d.js"></script>
 <script src="arm_core.js"></script>
 <script src="stick_limit.js"></script>
@@ -315,8 +316,9 @@ const DEFAULT_CFG = {
     toolMm: 128.35,
     jawMm: 46.0,          // 末端 46 mm 是夹爪本体：夹取点可落在这段上任意位置
     elbowSign: 1,
-    shoulder: { zeroDeg: 90.0, degPerPercent: 0.9, minDeg: 0.0, maxDeg: 180.0 },
-    elbow: { zeroDeg: 45.0, degPerPercent: 0.9, minDeg: -45.0, maxDeg: 135.0 }
+    // 与 Include/arm_config.hpp 同步：θ1 = 底盘接触角 4.10° ± 3° 余量，θ2 = 舵机行程 ±（180−3）°
+    shoulder: { zeroDeg: 90.0, degPerPercent: 0.9, minDeg: 7.10, maxDeg: 172.90 },
+    elbow: { zeroDeg: 45.0, degPerPercent: 0.9, minDeg: -42.0, maxDeg: 132.0 }
   },
   ws: { xMin: 0, xMax: 0, yMin: 0, yMax: 0 },   // 首帧按可达域拟合
   motion: {
@@ -356,14 +358,14 @@ const DEFAULT_CFG = {
 };
 
 const FW_POSES = [
-  { key: "Home",    x: 105.2, y: 38.3, grip: 0,   wrist: 0 },
-  { key: "Ready",   x: 77.8,  y: 77.8, grip: -20, wrist: 0 },
-  { key: "Reach",   x: 115.5, y: 0.0,  grip: -40, wrist: 0 },
-  { key: "Retract", x: 106.6, y: 22.7, grip: 0,   wrist: 0 },
-  { key: "Lift",    x: 73.9,  y: 82.1, grip: -40, wrist: 0 },
-  { key: "Carry",   x: 97.9,  y: 56.5, grip: -40, wrist: 0 },
-  { key: "Place",   x: 113.4, y: 15.9, grip: -30, wrist: 0 },
-  { key: "Drop",    x: 85.9,  y: 67.1, grip: 20,  wrist: 0 }
+  { key: "Home",    x: 105.2,  y: 38.3,  grip: 0,   wrist: 0 },
+  { key: "Ready",   x: 77.8,   y: 77.8,  grip: -20, wrist: 0 },
+  { key: "Reach",   x: 114.0,  y: 0.0,   grip: -40, wrist: 0 },
+  { key: "Retract", x: 107.1,  y: 22.81, grip: 0,   wrist: 0 },
+  { key: "Lift",    x: 73.9,   y: 82.1,  grip: -40, wrist: 0 },
+  { key: "Carry",   x: 97.9,   y: 56.5,  grip: -40, wrist: 0 },
+  { key: "Place",   x: 113.4,  y: 15.9,  grip: -30, wrist: 0 },
+  { key: "Drop",    x: 86.29,  y: 67.41, grip: 20,  wrist: 0 }
 ];
 
 /* ======================= 状态 ======================= */
@@ -1255,24 +1257,19 @@ function renderReadout() {
 }
 
 /* ======================= 臂体与底盘干涉 ======================= */
+/* 判据本体在 sim/collide.js（Node 侧 sim/verify/struct_limit.js 要共用一套），
+   这里只留薄封装：CFG.chassis 由页面传入，调用点一行都不用改。 */
 /** 臂体与底盘上表面之间留的最小间隙（mm）：小于它就是蹭/穿 */
-const CLA_MM = 1.0;
+const CLA_MM = SimCollide.CLA_MM;
 /** 底座半径（mm）：这圈里的点天生贴在底盘上，不算干涉 */
-const R0_MM = 14.0;
+const R0_MM = SimCollide.R0_MM;
 
 /**
  * @brief 点是否撞进底盘或钻到地面以下
  * @details 底盘是实体：x∈[rear,front]、y∈[ground,0] 都算干涉；上表面留 CLA_MM 余量。
  */
 function pointHitChassis(x, y) {
-  // 底座/轴承座那一圈（半径 R0）本身就坐在底盘上，不算干涉
-  if (x * x + y * y < R0_MM * R0_MM) { return false; }
-  const c = CFG.chassis;
-  const rear = c.frontMm - c.lenMm;
-  const ground = -(c.clearanceMm + c.bodyMm);
-  if (y < ground) { return true; }
-  if (x >= rear && x <= c.frontMm && y < CLA_MM) { return true; }
-  return false;
+  return SimCollide.hitPoint(CFG.chassis, x, y);
 }
 
 /**
@@ -1282,22 +1279,7 @@ function pointHitChassis(x, y) {
  * @return 段名数组，空数组 = 没干涉
  */
 function poseHits(p1In, p2In) {
-  const pp = poseParts(p1In, p2In);
-  const hits = [];
-  const seg = function (ax, ay, bx, by, name, n) {
-    for (let t = 0; t <= n; t++) {
-      const x = ax + (bx - ax) * t / n;
-      const y = ay + (by - ay) * t / n;
-      if (pointHitChassis(x, y)) {
-        hits.push(name);
-        return;
-      }
-    }
-  };
-  seg(0, 0, pp.ex, pp.ey, "大臂", 6);
-  seg(pp.ex, pp.ey, pp.wristX, pp.wristY, "小臂", 8);
-  seg(pp.wristX, pp.wristY, pp.tipX, pp.tipY, "夹爪", 4);
-  return hits;
+  return SimCollide.poseHits(CFG.chassis, poseParts(p1In, p2In));
 }
 
 /* ======================= 物块（20 mm 立方体）与物理 ======================= */

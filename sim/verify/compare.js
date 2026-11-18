@@ -18,22 +18,21 @@ const L1 = 76.0;
 const L2TOTAL = 168.43;
 const SIGN = 1;
 
-// 与 probe.cpp 里写死的标定一致
-const geom = {
-  upperMm: L1,
-  foreMm: L2TOTAL,
-  toolMm: 0,
-  elbowSign: SIGN,
-  shoulder: { zeroDeg: 90, degPerPercent: 0.9, minDeg: 0, maxDeg: 180 },
-  elbow: { zeroDeg: 45, degPerPercent: 0.9, minDeg: -45, maxDeg: 135 }
-};
+// 几何从 arm_core.js 的默认值派生（= arm_config.hpp 的 kGeom），限位也一起传进探针：
+// 这里以前写死 0/180 与 −45/135，arm_config 一改就悄悄跑在旧几何上。
+const geom = Object.assign(Core.defaultGeom(), { foreMm: L2TOTAL, toolMm: 0 });
+const LIMIT_ARGS = [
+  geom.shoulder.degPerPercent, geom.shoulder.zeroDeg, geom.shoulder.minDeg, geom.shoulder.maxDeg,
+  geom.elbow.degPerPercent, geom.elbow.zeroDeg, geom.elbow.minDeg, geom.elbow.maxDeg
+];
 
 const TOL_MM = 0.01;
 const TOL_DEG = 0.01;
 const TOL_PCT = 0.01;
 
 function runProbe(mode, lines) {
-  const out = execFileSync(PROBE, [mode, String(L1), String(L2TOTAL), String(SIGN)], {
+  const out = execFileSync(PROBE, [mode, String(L1), String(L2TOTAL), String(SIGN)]
+    .concat(LIMIT_ARGS.map(String)), {
     input: lines.join("\n") + "\n",
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024

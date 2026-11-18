@@ -47,19 +47,13 @@ constexpr int kMotorPolarity[4] = {1, 1, 1, 1};
 constexpr int kMaxDutyPercent = 100;
 
 /**
- * @brief 方向键备份平移的占空比（%）
- * @note 方向键按下时覆盖左摇杆的平移量。
- */
-constexpr int kButtonDutyPercent = 80;
-
-/**
  * @brief 底盘摇杆死区（原始 0..255 计数）
  */
 constexpr int kAxisDeadzone = 16;
 
 /**
- * @brief L2/R2 原地自转的占空比（%）
- * @note 两键同按相抵为 0。
+ * @brief 肩键 L1/R1 原地自转的占空比（%）
+ * @note 两键同按相抵为 0。扳机 L2/R2 已改为夹爪，不再参与底盘。
  */
 constexpr int kRotateDutyPercent = 80;
 
@@ -79,8 +73,6 @@ constexpr int kArmDeadzone = 8;
 /* Exported macro ------------------------------------------------------------*/
 
 static_assert(kMaxDutyPercent > 0 && kMaxDutyPercent <= 100, "Invalid PWM limit");
-static_assert(kButtonDutyPercent > 0 && kButtonDutyPercent <= kMaxDutyPercent,
-              "Invalid button speed");
 static_assert(kAxisDeadzone >= 0 && kAxisDeadzone < 127, "Invalid stick deadzone");
 static_assert(kRotateDutyPercent > 0 && kRotateDutyPercent <= kMaxDutyPercent,
               "Invalid rotate duty");

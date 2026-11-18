@@ -39,7 +39,7 @@ enum class Ps2Button : uint8_t {
 
 /**
  * @brief 一帧解码后的手柄状态
- * @note 只保留左摇杆：右摇杆字节（5/6）不解码。
+ * @note 左右摇杆都解：左摇杆给底盘平移，右摇杆给机械臂末端速度（v0.4 起）。
  */
 struct Ps2Frame {
     bool connected = false;  // 三重校验全部通过才算在线
@@ -47,6 +47,8 @@ struct Ps2Frame {
     uint16_t buttons = 0;    // 1 表示按下；仅在解码入口转换协议的低有效位
     uint8_t left_x = 128;    // 左摇杆 X，0..255，128 为中位
     uint8_t left_y = 128;    // 左摇杆 Y，0..255，0x00 = 推上
+    uint8_t right_x = 128;   // 右摇杆 X，0..255，0x00 = 推左（机械臂前伸/回收）
+    uint8_t right_y = 128;   // 右摇杆 Y，0..255，0x00 = 推上（机械臂抬升/下压）
 };
 
 /* Exported functions prototypes ---------------------------------------------*/

@@ -49,7 +49,9 @@ Ps2Frame decode_ps2_frame(const uint8_t *bytes, std::size_t length) {
     frame.buttons = static_cast<uint16_t>(
         ~(static_cast<uint16_t>(bytes[3]) | (static_cast<uint16_t>(bytes[4]) << 8)));
     if (frame.analog) {
-        // 字节 5/6 是右摇杆，本工程不用，直接跳过。
+        // 字节 5/6 是右摇杆（机械臂），7/8 是左摇杆（底盘）。
+        frame.right_x = bytes[5];
+        frame.right_y = bytes[6];
         frame.left_x = bytes[7];
         frame.left_y = bytes[8];
     }

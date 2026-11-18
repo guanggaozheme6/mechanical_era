@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file           : drive_control.cpp
- * @brief          : 麦轮混控与模式一按键映射实现（Device 层）
+ * @brief          : 麦轮混控与底盘按键映射实现（Device 层）
  ******************************************************************************
  */
 
@@ -93,9 +93,10 @@ DriveCommand mix_drive(int forward, int strafe, int rotation, car_config::Mecanu
 }
 
 /**
- * @brief 手柄 → 底盘指令（模式一）
- * @details 左摇杆平移、L2/R2 自转、方向键 80% 覆盖平移；这里只挡断线，
- *          停车判定（急停 latch + 断线）的唯一真值在 mode_control。
+ * @brief 手柄 → 底盘指令
+ * @details 左摇杆平移、肩键 L1/R1 自转。方向键已改给腕部（v0.4），
+ *          所以没有按钮备份平移。这里只挡断线，停车判定（急停 latch + 断线）
+ *          的唯一真值在 mode_control。
  * @param frame 解码后的手柄帧
  * @return 四路电机占空比；断线时全零
  */
@@ -103,23 +104,12 @@ DriveCommand drive_from_ps2(const Ps2Frame &frame) {
     if (!frame.connected) {
         return {};
     }
-    const bool up = ps2_pressed(frame, Ps2Button::Up);
-    const bool down = ps2_pressed(frame, Ps2Button::Down);
-    const bool left = ps2_pressed(frame, Ps2Button::Left);
-    const bool right = ps2_pressed(frame, Ps2Button::Right);
-
-    int forward = frame.analog ? axis(frame.left_y, true) : 0;
-    int strafe = frame.analog ? axis(frame.left_x, false) : 0;
-    // L2 逆时针 / R2 顺时针自转；两键同按相抵为 0。
+    const int forward = frame.analog ? axis(frame.left_y, true) : 0;
+    const int strafe = frame.analog ? axis(frame.left_x, false) : 0;
+    // L1 逆时针 / R1 顺时针自转；两键同按相抵为 0（扳机 L2/R2 归夹爪，不再参与底盘）。
     const int rotation =
-        (static_cast<int>(ps2_pressed(frame, Ps2Button::R2)) -
-         static_cast<int>(ps2_pressed(frame, Ps2Button::L2))) *
+        (static_cast<int>(ps2_pressed(frame, Ps2Button::R1)) -
+         static_cast<int>(ps2_pressed(frame, Ps2Button::L1))) *
         car_config::kRotateDutyPercent;
-
-    if (up || down || left || right) {
-        forward = (static_cast<int>(up) - static_cast<int>(down)) * car_config::kButtonDutyPercent;
-        strafe =
-            (static_cast<int>(right) - static_cast<int>(left)) * car_config::kButtonDutyPercent;
-    }
     return mix_drive(forward, strafe, rotation);
 }

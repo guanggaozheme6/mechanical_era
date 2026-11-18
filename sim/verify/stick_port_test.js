@@ -19,12 +19,12 @@
  *   P1 与 JS 逐帧一致：起点在框内的 200 步随机推杆，p1/p2 偏差 < 2e-3 %
  *      （框外起点另列「只报数不判」—— 那是 float vs double 在 130 mm 越界量上差
  *      0.1 µm 就能翻掉一个候选的锐边，两边都是合法分支，不属于移植错）
- *   P2 向内推：S2 顶到限位后停在 −100%，半径锁在右半平面内半径（±0.6 mm），无卡死
+ *   P2 向内推：S2 顶到小臂下端限位后停住（−96.67%），半径锁在右半平面内半径（±0.6 mm），无卡死
  *   P3 不冲：任何一帧的末端位移不超过期望步长的 1.15 倍
  *   P4 向外推到伸展极限：相邻帧位移方向逆转 0 次（不来回抖）
  *   P5 矩形当墙：斜推撞 x 上界后沿边滑（Δy > 15 mm），一步都不越界
- *   P6 放开矩形往下推 600 帧：卡死只允许发生在真实几何边界（θ1 顶 0° 且 θ2 顶 −45°），
- *      此前一帧都不许停，姿态不越行程
+ *   P6 放开矩形往下推 600 帧：卡死只允许发生在真实几何边界（θ1、θ2 同时顶下端限位），
+ *      此前一帧都不许停，姿态不越行程。两个边界的百分比由 arm_core 的限位反推，不写死 −100。
  */
 "use strict";
 
@@ -218,10 +218,13 @@ const inward = runBatch("cpp", HOME, -50, 0, 60, WS);
 const lastIn = inward.end;
 const rIn = Math.hypot(fk(lastIn).x, fk(lastIn).y);
 const rMin = Core.minReachableRadius(G, true);
-check(Math.abs(lastIn.p2 + 100) < 0.5 && Math.abs(rIn - rMin) < 0.6 &&
+/** 小臂的低端限位（百分比）——由限位真值反推，别写死 −100（结构限位改了它就变） */
+const S2_MIN = Core.degToPercent(G.elbow, G.elbow.minDeg);
+const S1_MIN = Core.degToPercent(G.shoulder, G.shoulder.minDeg);
+check(Math.abs(lastIn.p2 - S2_MIN) < 0.5 && Math.abs(rIn - rMin) < 0.6 &&
       inward.results.filter(function (r) { return r.stuck; }).length === 0,
   "P2 向内推锁在内半径上（无卡死）",
-  "S2=" + lastIn.p2.toFixed(2) + "%  r=" + rIn.toFixed(2) +
+  "S2=" + lastIn.p2.toFixed(2) + "%（限位 " + S2_MIN.toFixed(2) + "%）  r=" + rIn.toFixed(2) +
   "（内半径 " + rMin.toFixed(2) + "）");
 
 /* ---------------- P3 不冲 ---------------- */
@@ -265,15 +268,18 @@ down.results.forEach(function (r, i) {
   }
   lowY = Math.min(lowY, fk({ p1: r.p1, p2: r.p2 }).y, fk(down.states[i]).y);
 });
-// 固件几何的底部就是 (θ1=0°, θ2=−45°) = S1/S2 双双顶 −100%，约 y=−28.3：
-// 再往下需要 θ1<0，那是结构限位之外。所以「卡死」只要发生在两个关节都到边界之后就是对的。
+// 固件几何的底部就是两路关节同时顶到下端限位（θ1 = range_min、θ2 = range_min）：
+// 再往下需要 θ1 < range_min，那就是结构限位之外。所以「卡死」只要发生在两个关节都到边界
+// 之后就是对的；两个边界的百分比由限位反推，不写死 −100（图省事的写法在 v0.3 改限位时炸过）。
 const stopState = firstStuck >= 0 ? down.states[firstStuck] : HOME;
-const atCorner = Math.abs(stopState.p1 + 100) < 1.0 && Math.abs(stopState.p2 + 100) < 1.0;
-check(badPose === 0 && stuckDown > 0 && atCorner && lowY <= -28.0,
-  "P6 向下推 600 帧：只停在真实边界（θ1=0°/θ2=−45°）",
+const atCorner = Math.abs(stopState.p1 - S1_MIN) < 1.0 && Math.abs(stopState.p2 - S2_MIN) < 1.0;
+const cornerFk = fk({ p1: S1_MIN, p2: S2_MIN });
+check(badPose === 0 && stuckDown > 0 && atCorner && Math.abs(lowY - cornerFk.y) < 1.5,
+  "P6 向下推 600 帧：只停在真实边界（两路都顶下端限位）",
   "第一次卡死在第 " + firstStuck + " 帧（S1=" + stopState.p1.toFixed(1) + "% S2=" +
-  stopState.p2.toFixed(1) + "%），卡死共 " + stuckDown + " 帧，越行程 " + badPose +
-  " 帧，最低 y=" + lowY.toFixed(1) + " mm");
+  stopState.p2.toFixed(1) + "%，边界 " + S1_MIN.toFixed(1) + "/" + S2_MIN.toFixed(1) +
+  "%），卡死共 " + stuckDown + " 帧，越行程 " + badPose + " 帧，最低 y=" + lowY.toFixed(1) +
+  " mm（边界姿态 y=" + cornerFk.y.toFixed(1) + "）");
 
 /* ---------------- 报告 ---------------- */
 

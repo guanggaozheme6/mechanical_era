@@ -23,42 +23,16 @@
 const path = require("path");
 const Core = require(path.join(__dirname, "..", "arm_core.js"));
 const Limit = require(path.join(__dirname, "..", "stick_limit.js"));
+const Collide = require(path.join(__dirname, "..", "collide.js"));
 
 const g = Core.defaultGeom();
 const CH = { lenMm: 265.08, frontMm: 72.46, clearanceMm: 37, bodyMm: 40 };
 const DT = 0.02;
 
-/* ---------------- 干涉判据（与 index.html 的 poseHits 同一套） ---------------- */
-function pointHit(x, y) {
-  if (x * x + y * y < 14 * 14) {
-    return false;
-  }
-  const rear = CH.frontMm - CH.lenMm;
-  const ground = -(CH.clearanceMm + CH.bodyMm);
-  if (y < ground) {
-    return true;
-  }
-  return x >= rear && x <= CH.frontMm && y < 1.0;
-}
-
+/* ---------------- 干涉判据（判据本体在 sim/collide.js，与页面同一套） ---------------- */
 function feasible(p1, p2) {
-  const fk = Core.solveForward(g, p1, p2);
-  const t1 = Limit.percentToDeg(g.shoulder, p1) * Math.PI / 180;
-  const ex = g.upperMm * Math.cos(t1);
-  const ey = g.upperMm * Math.sin(t1);
-  const segs = [
-    [0, 0, ex, ey, 6],
-    [ex, ey, fk.wristX, fk.wristY, 8],
-    [fk.wristX, fk.wristY, fk.tipX, fk.tipY, 4]
-  ];
-  for (const s of segs) {
-    for (let t = 0; t <= s[4]; t++) {
-      if (pointHit(s[0] + (s[2] - s[0]) * t / s[4], s[1] + (s[3] - s[1]) * t / s[4])) {
-        return false;
-      }
-    }
-  }
-  return true;
+  // 真实口径：solveForward 的末端 = 肘 + (fore + tool)·u（168.43），三段一起判
+  return Collide.poseHits(CH, Core.solveForward(g, p1, p2)).length === 0;
 }
 
 /* ---------------- 跑一段 ---------------- */
@@ -145,10 +119,13 @@ const inward = run("slide", HOME, -50, 0, N);
 const lastIn = inward[inward.length - 1];
 const rIn = Math.hypot(lastIn.to.x, lastIn.to.y);
 const rMin = Core.minReachableRadius(g, true);
+/** 小臂下端限位（百分比）：由限位真值反推，别写死 −100 */
+const S2_MIN = Core.degToPercent(g.elbow, g.elbow.minDeg);
 check(
-  Math.abs(lastIn.p2 + 100) < 0.5 && Math.abs(rIn - rMin) < 0.6,
+  Math.abs(lastIn.p2 - S2_MIN) < 0.5 && Math.abs(rIn - rMin) < 0.6,
   "A1 向内推锁在内半径上",
-  "S2=" + lastIn.p2.toFixed(2) + "%  r=" + rIn.toFixed(2) + "（内半径 " + rMin.toFixed(2) + "）"
+  "S2=" + lastIn.p2.toFixed(2) + "%（限位 " + S2_MIN.toFixed(2) + "%）  r=" + rIn.toFixed(2) +
+    "（内半径 " + rMin.toFixed(2) + "）"
 );
 const ov = overshoot(inward);
 check(ov <= 1.15, "A2 不冲（单帧位移 ≤ 1.15 倍期望）", "最坏 " + ov.toFixed(2) + "×");

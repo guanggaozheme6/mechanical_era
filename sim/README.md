@@ -8,13 +8,16 @@ sim/
 ├── index.html          画布 + 参数面板 + 预设 + 物块 + 导入导出（全部 UI）
 ├── arm_core.js         平面 2R 正逆解，逐行对应 Algorithm/src/arm_kinematics.cpp
 ├── stick_limit.js      摇杆软件限位：末端域（固件现状）vs 关节域贴边滑（§8）
+├── collide.js          臂体 vs 底盘/地面的干涉判据（页面与 Node 探针共用一套）
 ├── cube3d.js           20 mm 立方体的位姿与正交投影（6 面编号、画家排序、明暗）
 └── verify/
-    ├── probe.cpp       把真实的 arm_kinematics.cpp 编成对拍探针
+    ├── probe.cpp       把真实的 arm_kinematics.cpp 编成对拍探针（限位从参数传，不写死）
     ├── compare.js      18881 个点上对比 arm_core.js 与固件实现
-    ├── stick_test.js   摇杆限位的 6 条断言（不冲、不抖、贴边滑、不撞车）
+    ├── stick_test.js   摇杆限位的 6+1 条断言（不冲、不抖、贴边滑、不撞车）
     ├── stick_probe.cpp 把真实的 arm_limit.cpp 编成对拍探针（固件几何）
-    └── stick_port_test.js  固件贴边滑的 6 条断言 + 与 JS 逐帧对拍
+    ├── stick_port_test.js  固件贴边滑的 6 条断言 + 与 JS 逐帧对拍
+    ├── struct_probe.cpp    把 arm_config.hpp 的 kGeom/kWorkspace/kPoses 打出来
+    └── struct_limit.js     结构限位取证：接触角 → 3° 余量 → 内半径/弧带/8 条预设（D-2）
 ```
 
 ---
@@ -37,8 +40,10 @@ sim/
 | **夹爪占末端** | **46.00** | 最后 46 mm 是夹爪本体，夹取点可在其中取（§2） |
 | 指尖最大伸展 | **244.43** | L1 + L2Σ |
 
-关节与固件同一套 `kGeom`：θ1 ∈ [0°,180°] zero 90°，θ2 ∈ [−45°,+135°] zero 45°，
-`deg_per_percent = 0.9`，`elbow_sign = +1`（高肘：θ2 的符号与目标 x 的符号相反）。
+关节与固件同一套 `kGeom`：θ1 ∈ [7.10°,172.90°]（底盘接触角 4.10° + 3° 余量，
+**0°/180° 是大臂躺在底盘上，到不了**），θ2 ∈ [−42°,+132°]（舵机行程两端各退 3°），
+zero 分别是 90° / 45°，`deg_per_percent = 0.9`，`elbow_sign = +1`（高肘：θ2 的符号与目标 x 的符号相反）。
+两端对称退余量 ⇒ zero 仍在中点 ⇒ percent=0 的物理位置没变。
 
 ## 2. 夹爪不是点，是最后 46 mm 的一段线
 
@@ -258,12 +263,14 @@ PASS
 
 ### 8.2 实测（`node sim/verify/stick_test.js`，60 帧 × 20 ms，从 Home 出发）
 
+（2026-11-18 D-2 改限位后重跑：右半平面内半径 228.58 → **230.59**）
+
 | 推法 | 贴边滑 | 末端域（固件现状） |
 | --- | --- | --- |
-| 向内 −x | 12.0 mm，S2 停在 −100%，r 锁在内半径 228.58 | 12.4 mm，标记全是 `wall` |
-| 向外 +x（到伸展极限） | 10.7 mm，**方向逆转 0 次**，单帧位移 ≤ 1.00× 期望 | 11.1 mm，二阶差 0.620（每帧重新 IK，圆环钳位来回跳） |
-| 向下 −y（进 β<−15.2° 死角） | 110.8 mm，**0 帧被拒** | 92.0 mm，**28 帧 `limited` 整帧不动** |
-| 向下推 600 帧 | **到 y=−77.0（地面）**，x≈224 | 卡在 y=−58.6 |
+| 向内 −x | 10.7 mm，S2 停在 **−96.67%**，r 锁在内半径 230.59 | 11.3 mm，标记全是 `wall` |
+| 向外 +x（到伸展极限） | 10.7 mm，**方向逆转 0 次**，单帧位移 ≤ 1.00× 期望 | 9.3 mm，二阶差 0.620（每帧重新 IK，圆环钳位来回跳） |
+| 向下 −y（进 β<−6.3° 死角） | 111.0 mm，**0 帧被拒** | 81.0 mm，**39 帧 `limited` 整帧不动** |
+| 向下推 600 帧 | **到 y=−76.8（地面）**，x≈220 | 卡在 y=−47.6 |
 | 斜推撞矩形上界 | 沿边走了 Δy=26.7 mm，一步不越界 | 每帧把目标拽到边上（钳位照发） |
 
 结论三条：
@@ -276,6 +283,10 @@ PASS
 ### 8.3 能伸到哪：地面窗口，以及「车底下」为什么够不到
 
 放开工作区口径之后（见 §8.6），实测能到的最低位置：
+
+> ⚠ 下表是 **D-2 改限位之前**扫的（θ2 前侧 45°）。改限位后右半平面内半径从 228.58 抬到
+> **230.59**，各行的 x 起点都会往里挪 1~2 mm，`y=−77` 那一行的窗口更窄。要新的窗口就按
+> §8.3 的口径重扫（`scanGrasp` + `collide.js`），别把这表当现值用。
 
 | 高度 | 能夹的 x 范围（固件精确命中 + 无干涉） |
 | --- | --- |
@@ -321,15 +332,21 @@ PASS
 | `feasible` 回调 | **固件没有**：只靠限位 + 矩形。要加干涉判据就在 `arm_limit.cpp` 的 `feasible_at()` 里补线段采样（`sim/verify/stick_test.js` 的 `feasible()` 是现成写法） |
 
 几何口径不同：固件末端是**腕点**（`fore_mm = 40.08`，没有 128.35 的工具延伸），所以
-`L1=76 / L2=40.08`、右半平面内半径 108.12、最大伸展 116.08 —— 仿真的 228.58 / 244.43 那组
-数字是「指尖 + 工具」口径，别混用。
+`L1=76 / L2=40.08`、右半平面内半径 **109.13**、弧带厚 6.95、最大伸展 116.08 —— 仿真的
+230.59 / 244.43 那组数字是「指尖 + 工具」口径，别混用。
 
 固件侧的验收（真代码 + 真几何，6 条断言，含与 JS 的逐帧对拍）：
 
 ```bash
-g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_limit.cpp Algorithm/src/arm_kinematics.cpp \
-    sim/verify/stick_probe.cpp -o sim/verify/stick_probe.exe
+g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_limit.cpp Algorithm/src/arm_kinematics.cpp sim/verify/stick_probe.cpp -o sim/verify/stick_probe.exe
 node sim/verify/stick_port_test.js
+```
+
+结构限位（D-2）的验收另外一支，真值直接从 `arm_config.hpp` 读：
+
+```bash
+g++ -std=c++14 -O2 -I Include -I Algorithm/inc -I Device/inc Algorithm/src/arm_kinematics.cpp sim/verify/struct_probe.cpp -o sim/verify/struct_probe.exe
+node sim/verify/struct_limit.js
 ```
 
 每帧开销：位置法 1~7 次 `solve_xy`（多数帧只 1 次，边界才缩步）；关节兜底只在卡死时走。
