@@ -37,9 +37,9 @@ struct ArmFeedback {
     float target_y_mm = 0.0F;  //
     float shoulder_deg = 0.0F; // 当前连杆角（标定反推用）
     float elbow_deg = 0.0F;    //
-    bool reachable = true;     // 圆环内（没被径向钳位）
-    bool limited = false;      // 关节角被结构限位裁剪
-    bool at_wall = false;      // 目标被工作区矩形钳位 / 被拒绝
+    bool reachable = true;     // 圆环内（没被径向钳位 = 精确命中）
+    bool limited = false;      // θ1 被结构限位裁剪（该方位够不到，未下发）
+    bool at_wall = false;      // 目标被钳到边界（已下发）；与 limited 互斥
     bool bringup = false;      // 当前固件是 ARM_BRINGUP 标定版
     unsigned bad_poses = 0U;   // 上电自检失败的预设位掩码
 };
@@ -55,16 +55,18 @@ void arm_pose_init(uint32_t now_ms);
 /**
  * @brief 请求第 index 条预设（0..7，见 arm_config::Pose）
  * @details 表驱动，不再有 8 个 if。进门先清笛卡尔速度，否则"按了预设先动一下再被拉回"。
- * @note 索引越界或该条上电自检失败时不做任何动作，失败原因进 ArmFeedback。
+ *          坐标越界时会被钳到边界照发；只有该方位 θ1 越限、或该条上电自检没过时才不动。
+ * @note 索引越界、或该条上电自检失败时不做任何动作，失败原因进 ArmFeedback。
  * @param index 预设索引 0..7
  */
 void arm_pose_request(unsigned index);
 
 /**
  * @brief 绝对坐标请求（动作序列 / 上位机）
+ * @details 越界不拒绝：先钳到工作区矩形、再沿方位缩到可控圆环边界，然后照样下发。
  * @param x_mm 目标 x（mm）
  * @param y_mm 目标 y（mm）
- * @return true 表示已下发；false 表示被钳位或超限，未下发
+ * @return true 表示精确命中；false 表示已钳到边界后下发，或该方位越限够不到（未下发）
  */
 bool arm_pose_request_xy(float x_mm, float y_mm);
 

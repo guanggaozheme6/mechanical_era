@@ -40,8 +40,12 @@ using arm_config::kWorkspace;
 
 /* Private constants ---------------------------------------------------------*/
 
-/** @brief 上电时四路的目标行程（中位） */
-constexpr float kZeroPercent[kServoCount] = {0.0F, 0.0F, 0.0F, 0.0F};
+/**
+ * @brief 上电时四路的目标行程（必须落在 kWorkspace 内）
+ * @details B 方案下 percent=0 意味着大臂竖直 + 小臂半折(45°)，末端绕在肩上方，
+ *          不在工作区里；上电点直接对齐 kPoses[Home]=(105.2, 38.3)。
+ */
+constexpr float kZeroPercent[kServoCount] = {-66.0F, -86.0F, 0.0F, 0.0F};
 
 /**
  * @brief 标定期初值（行程百分比，-100..100）
@@ -113,12 +117,14 @@ void refresh_feedback() {
 /**
  * @brief 两级钳位 + IK + 写入关节层
  * @details 钳位顺序不能反：先矩形（穿肩轴 / 力矩 / 折叠死区），再圆环（够不着）。
- *          命中任一级钳位就不改目标：边界点往往贴着奇异区，照着走会抖。
+ *          越界**不拒绝**：矩形直接夹到边，半径沿方位缩到"限位允许的可控边界"，
+ *          然后把钳位结果照样下发 —— 摇杆推到头就是顶住边界，手感连续。
+ *          只有 θ1 越出结构限位才真的不动作（那个方位本身够不到，硬掰会让臂甩到别处）。
  * @param x_mm 请求 x（mm）
  * @param y_mm 请求 y（mm）
  * @param applied_x 输出：实际用于解算的 x（钳位后、含下垂补偿）
  * @param applied_y 输出：实际用于解算的 y
- * @return true 表示已下发；false 表示被钳位或超限（原因已在 g_fb 里）
+ * @return true 表示精确命中；false 表示已钳到边界后下发，或完全够不到（原因在 g_fb 里）
  */
 bool apply_xy(float x_mm, float y_mm, float &applied_x, float &applied_y) {
     if (!finite(x_mm) || !finite(y_mm)) {
@@ -148,18 +154,23 @@ bool apply_xy(float x_mm, float y_mm, float &applied_x, float &applied_y) {
     const arm_kinematics::Solution solution = arm_kinematics::solve_xy(kGeom, tx, ty);
     applied_x = tx;
     applied_y = ty;
-    g_fb.reachable = solution.reachable;
-    g_fb.limited = solution.limited;
-    g_fb.at_wall = wall;
+    g_fb.reachable = solution.reachable; // 没被径向钳位 ⇒ 精确命中
+    g_fb.limited = solution.limited;     // θ1 越限 ⇒ 这个方位本身够不到
+    g_fb.at_wall = wall || !solution.reachable;
+    g_fb.target_x_mm = applied_x;
+    g_fb.target_y_mm = applied_y;
 
-    // 命中任一级钳位就不改目标：边界点往往贴着奇异区，照着走会抖。
-    if (wall || !solution.reachable || solution.limited) {
+    // 越界的点已经在 solve_xy 里沿方位钳到圆环边界（太远 → L1+L2，太近 → 限位允许的内半径），
+    // 所以这里照发：摇杆推到头就是顶住边界，手感连续、不会突然拒绝。
+    // 只有 θ1 越过结构限位才真的不动 —— 那种情况是"这个方位本身够不到"（比如正下方死角），
+    // 硬掰只会让臂甩到别处去。
+    if (solution.limited) {
         return false;
     }
 
     arm_joint::set_target(g_bank.channel[arm_config::kShoulderServo], solution.shoulder_percent);
     arm_joint::set_target(g_bank.channel[arm_config::kElbowServo], solution.elbow_percent);
-    return true;
+    return !wall && solution.reachable;
 }
 
 /**

@@ -33,14 +33,15 @@ struct JointCalib {
 
 /**
  * @brief 平面 2R 几何模型
- * @note 只装几何量；工作区、速度、姿态表属于 arm_config，不进这里。
+ * @param upper_mm L1 肩轴心 → 肘轴心
+ * @param fore_mm L2 肘轴心 → 腕点
  */
 struct Model {
     float upper_mm; // L1 肩轴心 → 肘轴心
     float fore_mm;  // L2 肘轴心 → 腕点
     JointCalib shoulder;
     JointCalib elbow;
-    int elbow_sign; // +1 = 小臂向上兜（唯一分支，运行期无歧义）
+    int elbow_sign; // +1 = 高肘（上吊，默认）/ -1 = 低肘；决定两支镜像解里取哪一支
 };
 
 /**
@@ -99,6 +100,18 @@ Solution solve_xy(const Model &model, float x_mm, float y_mm);
  */
 void solve_forward(const Model &model, float shoulder_percent, float elbow_percent, float &x_mm,
                    float &y_mm);
+
+/**
+ * @brief 某一侧的最小可达半径（由小臂角度限位反推）
+ * @details θ2 行程不对称时（B 方案：前 45° / 后 135°），左右半平面能用到的折叠角不同，
+ *          内边界也就不同：右半平面只能用 θ2 的负支，所以吃 range_min 的绝对值；
+ *          左半平面用正支，吃 range_max。r(θ2) 在 [0°,180°] 上单调减，取该侧能到的最深
+ *          折叠角即可。对称限位（θ2 限 ±90°）时两侧都得到 √(L1²+L2²)，与旧行为一致。
+ * @param model 几何模型
+ * @param wrist_right true = 目标在右半平面（θ2 取负支）
+ * @return 该侧内半径（mm），不小于 |L1−L2|
+ */
+float min_reachable_radius(const Model &model, bool wrist_right);
 
 /**
  * @brief 行程百分比 → 连杆角

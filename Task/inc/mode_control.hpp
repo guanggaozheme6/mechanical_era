@@ -31,7 +31,7 @@ struct ControlOutput {
     ArmCommand arm;
     OperationMode mode = OperationMode::Drive;
     bool stopped = false; // 急停 latch 或手柄断线
-    ArmFeedback arm_fb;   // 机械臂反馈（生产者是 arm_pose，这里只搬运）
+    ArmFeedback arm_fb;   // 机械臂反馈
 };
 
 /* Exported functions prototypes ---------------------------------------------*/

@@ -25,15 +25,19 @@ namespace arm_config {
 /* Exported constants --------------------------------------------------------*/
 
 /**
- * @brief 几何模型
- * @details shoulder：大臂，zero 0° = 水平；elbow：小臂，zero 90° = 垂直于大臂。
- * @note 各字段 TBD-1~4 未标定，标定顺序见 README。
+ * @brief 几何模型（B 方案）
+ * @details 大臂 θ1 ∈ [0°,180°]，zero 90° = 竖直；小臂 θ2 ∈ [-45°,+135°]，zero 45° = 半折。
+ *          B 的小臂行程不对称：以伸直为基准，前（超伸侧）只有 45°，后（折叠侧）135°。
+ *          两路角度跨度都正好 180° = 200% 行程，两端零余量，标定差一格就是 0.9°。
+ * @note zero_deg 必须是 (−45+135)/2 = 45，改成别的值就有一端溢出 200% 行程。
+ *       L1/L2 是 11.18 实测；TBD-2/3/4（zero / deg_per_percent / 结构限位）还没标定，
+ *       标定顺序见 README §7.1。
  */
 constexpr arm_kinematics::Model kGeom = {
-    110.0F, 95.0F,                // upper_mm, fore_mm           TBD-1
-    {0.0F, 0.9F, -90.0F, 90.0F},  // shoulder zero,deg/%,min,max TBD-2/3/4
-    {90.0F, 0.9F, 0.0F, 180.0F},  // elbow    zero 必须 90°      TBD-2/3/4
-    +1,                           // elbow_sign = 小臂向上兜
+    76.0F, 40.08F,                // L1 大臂 / L2 小臂（11.18 实测）
+    {90.0F, 0.9F, 0.0F, 180.0F},  // shoulder: zero=行程中点, deg/%, min, max
+    {45.0F, 0.9F, -45.0F, 135.0F},// elbow   : zero=行程中点, deg/%, min, max
+    +1,                           // elbow_sign = +1 高肘（上吊）构型
 };
 
 /**
@@ -98,10 +102,16 @@ struct Workspace {
 
 /**
  * @brief 笛卡尔工作区实例
- * @note x_min 由小臂最大折叠角决定（v0.1 §12.2）：θ2max=143° → 70 mm；
- *       y_max 避开高力矩区。TBD-11 未标定。
+ * @details B 方案的前半平面可达域是一条**弧带**，不是一个矩形：
+ *          θ2 在右半平面只能用 [−45°,0]（超伸侧只有 45°），所以半径只能落在
+ *          108.12 ~ 116.08 mm（8 mm 厚），围成一条从正前方 (116,0) 扫到近乎竖直的带子。
+ *          域宽（前后）根本不随 x 变，随 β 变 —— 矩形只能保守包住，靠 solve_xy 的圆环钳位
+ *          把框内偏心的命令点投影到弧带上，所以这里是个"软边界"：
+ *          框内不等于逐点可达，但任何点都会被钳到最近的弧带位置。
+ * @note 要更大的平面工作区只能放开小臂前侧行程或换连杆，加工作区没用。
+ *       TBD-11：实物工位摆好后，按实际抓取点再往里缩一次。
  */
-constexpr Workspace kWorkspace = {70.0F, 200.0F, -20.0F, 120.0F};
+constexpr Workspace kWorkspace = {70.0F, 116.0F, -20.0F, 85.0F};
 
 /**
  * @brief 速度与手感参数
@@ -170,19 +180,21 @@ enum class Pose : unsigned {
 
 /**
  * @brief 八条预设姿态表
- * @details Home = FK(0,0,0,0)，上电中位就是这个点，按 ↑ 不会跳。
- * @note 坐标全是 TBD-8 占位值，标定后替换。
+ * @details 八条全部落在前方那条 108.5~115.5 mm 的弧带上，按方位角 β 铺开
+ *          （β 从 0° 正前方扫到 65°），半径只留 1~2 mm 余量——B 方案本来就只有这么多。
+ *          Home 必须等于上电中位（arm_pose.cpp 的 kZeroPercent），否则按 ↑ 第一帧会跳。
+ * @note 坐标全是 TBD-8 占位值：都验过可达、S2 最紧 −97%，但没对过实际工位，标定后替换。
  */
 constexpr Preset kPoses[8] = {
-    //  x_mm   y_mm  grip  wrist  说明
-    {110.0F, 95.0F, 0.0F, 0.0F},    // Home   = FK(0,0,0,0)，上电中位就是这个点，切换不跳
-    {150.0F, 60.0F, -20.0F, 0.0F},  // Ready  准备抓取
-    {190.0F, 10.0F, -40.0F, 0.0F},  // Reach  前伸到边界附近
-    {75.0F, 15.0F, 0.0F, 0.0F},     // Retract 收到最近
-    {120.0F, 110.0F, -40.0F, 0.0F}, // Lift   抬到高位（y_max 内）
-    {110.0F, 90.0F, -40.0F, 0.0F},  // Carry  搬运中间态
-    {160.0F, 40.0F, -30.0F, 0.0F},  // Place  放置
-    {170.0F, 70.0F, 20.0F, 0.0F},   // Drop   松开
+    //  x_mm    y_mm   grip  wrist  说明（β / r）
+    {105.2F, 38.3F, 0.0F, 0.0F},    // Home     β=20° r=112，↔ kZeroPercent{-66,-86}
+    {77.8F, 77.8F, -20.0F, 0.0F},   // Ready    β=45° r=110，准备抓取
+    {115.5F, 0.0F, -40.0F, 0.0F},   // Reach    β=0°  r=115.5，最大伸展
+    {106.6F, 22.7F, 0.0F, 0.0F},    // Retract  β=12° r=109，收到最近
+    {73.9F, 82.1F, -40.0F, 0.0F},   // Lift     β=48° r=110.5，抬到框内最高
+    {97.9F, 56.5F, -40.0F, 0.0F},   // Carry    β=30° r=113，搬运中间态
+    {113.4F, 15.9F, -30.0F, 0.0F},  // Place    β=8°  r=114.5，放置
+    {85.9F, 67.1F, 20.0F, 0.0F},    // Drop     β=38° r=109，低位松开
 };
 
 constexpr unsigned kPoseCount = static_cast<unsigned>(Pose::Count);
