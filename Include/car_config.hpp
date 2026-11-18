@@ -66,7 +66,7 @@ constexpr int kEstopHoldMs = 200;
 /**
  * @brief 机械臂摇杆死区
  * @note 比底盘小，因为机械臂需要更精细的微调。
- * @note 关节速度、插值速度、限位、预设表都在 arm_config.hpp，不在本文件。
+ * @note 关节速度、插值速度、限位、中立位坐标都在 arm_config.hpp，不在本文件。
  */
 constexpr int kArmDeadzone = 8;
 

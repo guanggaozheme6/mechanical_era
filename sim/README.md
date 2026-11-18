@@ -16,9 +16,9 @@ sim/
     ├── stick_test.js   摇杆限位的 6+1 条断言（不冲、不抖、贴边滑、不撞车）
     ├── stick_probe.cpp 把真实的 arm_limit.cpp 编成对拍探针（固件几何）
     ├── stick_port_test.js  固件贴边滑的 6 条断言 + 与 JS 逐帧对拍
-    ├── struct_probe.cpp    把 arm_config.hpp 的 kGeom/kWorkspace/kPoses 打出来
-    ├── struct_limit.js     结构限位取证：接触角 → 3° 余量 → 内半径/弧带/8 条预设（D-2）
-    └── keymap_test.cpp     v0.4 按键映射的主机侧验收（真代码，不属仿真；8 条断言）
+    ├── struct_probe.cpp    把 arm_config.hpp 的 kGeom/kWorkspace/kNeutralPose 打出来
+    ├── struct_limit.js     结构限位取证：接触角 → 3° 余量 → 内半径/弧带/中立位余量（D-2）
+    └── keymap_test.cpp     v0.4 按键映射的主机侧验收（真代码，不属仿真；9 条断言）
 ```
 
 ---
@@ -78,7 +78,7 @@ zero 分别是 90° / 45°，`deg_per_percent = 0.9`，`elbow_sign = +1`（高�
 地面 y=−77 上：固件能夹 x = 168.0 ~ 225.0（底盘前端外 95.5 ~ 152.5 mm）
 ```
 
-也就是说：**原来那 8 条 `kPoses`（r≈110）全部落在内半径以内**，会被沿方位钳到 228.6 的外圈上
+也就是说：**原来那 8 条规划坐标（r≈110，v0.4 之前的固件 `kPoses`）全部落在内半径以内**，会被沿方位钳到 228.6 的外圈上
 ——页面里点「载入固件现值」看到 8 条全是「钳位」就是这个原因，不是仿真算错，是固件的
 `fore_mm` 还是 40.08。
 
@@ -102,7 +102,7 @@ zero 分别是 90° / 45°，`deg_per_percent = 0.9`，`elbow_sign = +1`（高�
 | 几何 · 连杆与底盘 | L1/L2/工具/夹爪、底盘四尺寸 | 展开 |
 | 标定 · 零点/比例/限位 | zero_deg、deg_per_percent、range_min/max | 收起 |
 | 工作区 / 手感 | kWorkspace、kMotion | 收起 |
-| 预设姿态 | 8 条 kPoses + 生成/载入/存回 | 收起（标题显示 n/8 命中） |
+| 预设姿态 | 8 条规划坐标（不进固件）+ 生成/载入/存回 | 收起（标题显示 n/8 命中） |
 | 导入 / 导出 | JSON / hpp / 重置 | 收起 |
 
 | 操作 | 效果 |
@@ -200,10 +200,11 @@ PASS
 8 条预设、派生量），再拖回页面「导入 JSON」即可复原。
 
 **`arm_config_snippet.hpp`**：按 `Include/arm_config.hpp` 的写法给出 `kGeom` / `kWorkspace` /
-`kMotion` / `kPoses[8]`，带派生量和自检结论，直接对照粘贴。注意两点：
+`kMotion` / `kNeutralPose`，带派生量和自检结论，直接对照粘贴。注意三点：
 
 1. `fore_mm` 已经按「腕点 + 工具」合并成 168.43，**不要再拆回 40.08**；
-2. 预设坐标是**夹取点**（不是指尖），实物工位定了要重标。
+2. 固件只吃**中立位一条**，所以只导出 `kNeutralPose`；其余 7 条坐标以注释形式附在后面当参考；
+3. 预设坐标是**夹取点**（不是指尖），实物工位定了要重标。
 
 ---
 
@@ -398,10 +399,10 @@ node sim/verify/struct_limit.js
 | --- | --- | --- |
 | 末端 | 夹取点（`L2Σ = fore + tool = 168.43`） | **腕点**（`fore_mm = 40.08`），没有工具延伸 |
 | 可达圈 | 指尖 228.58 ~ 244.43 | 腕点 109.13 ~ 116.08（右半平面） |
-| 预设表 | 8 条 × 4 列（x/y/grip/wrist），**规划工具** | `kPoses[1]`：只有中立位 xy |
+| 预设表 | 8 条 × 4 列（x/y/grip/wrist），**规划工具** | `kNeutralPose`：只有中立位 xy |
 | 干涉 | `collide.js` 线段采样，硬约束 | **没有**（`Debug.md` D-4） |
 | 摇杆 | 页面自己的圆盘（推杆量 → 平方律 → 限位策略） | 右摇杆 → 同一套平方律 + `arm_limit` |
 
 所以：**页面里那 8 条预设是拿来挑坐标的，不是固件里的表**。往固件抄坐标只抄中立位
-（`kPoses[0]`，必须等于 `kZeroPercent` 的 FK），其它坐标当参考。导出的 `arm_config_snippet.hpp`
-还是 4 列旧格式 —— 见 `Debug.md` D-5。
+（`kNeutralPose`，必须等于 `kZeroPercent` 的 FK），其它坐标当参考。导出的 `arm_config_snippet.hpp`
+也按这个口径生成：`kNeutralPose` 一条 + 其余 7 条注释。

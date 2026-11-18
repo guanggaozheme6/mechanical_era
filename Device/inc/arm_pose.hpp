@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file           : arm_pose.hpp
- * @brief          : 机械臂编排层：预设姿态、笛卡尔会话与反馈聚合（Device 层）
+ * @brief          : 机械臂编排层：中立位、笛卡尔会话与反馈聚合（Device 层）
  ******************************************************************************
  */
 
@@ -40,7 +40,7 @@ struct ArmFeedback {
     bool limited = false;      // 一步都走不动（正对墙 / 墙角），整帧未下发
     bool at_wall = false;      // 顶住边界但仍在走（缩步 / 切向滑），已下发
     bool bringup = false;      // 当前固件是 ARM_BRINGUP 标定版
-    unsigned bad_poses = 0U;   // 上电自检：bit0 = 中立位不可用（v0.4 只有这一条）
+    bool neutral_ok = true;    // 上电自检：中立位可达且不越限（false = 按 Start 不动）
 };
 
 /* Exported functions prototypes ---------------------------------------------*/
@@ -53,7 +53,7 @@ void arm_pose_init(uint32_t now_ms);
 
 /**
  * @brief 回到中立位（Start 键）
- * @details 唯一保留的姿态动作：目标是 `arm_config::kPoses[0]`，等于上电点。
+ * @details 唯一保留的姿态动作：目标是 `arm_config::kNeutralPose`，等于上电点。
  *          只写两个解算轴（大臂 / 小臂），**不动夹爪和腕** —— 手上夹着东西按 Start
  *          不会把它松掉或甩出去。坐标越界时钳到边界照发；该方位 θ1 越限、
  *          或上电自检就没过时整帧不动，原因进 ArmFeedback。
@@ -112,32 +112,13 @@ ArmCommand arm_pose_update(uint32_t now_ms);
 ArmCommand arm_pose_hold(uint32_t now_ms);
 
 /**
- * @brief 取某一路当前的整数行程百分比
- * @param joint 关节序号 0..3
- * @return -100..100；越界返回 0
- */
-int arm_pose_value(unsigned joint);
-
-/**
  * @brief 四路是否都已到达目标
  * @return true 表示四路都在 settle 容差内
  */
 bool arm_pose_at_target();
 
 /**
- * @brief 夹爪接在哪一路舵机上
- * @return 通道号（arm_config::kGripperServo）
- */
-unsigned arm_pose_gripper_servo();
-
-/**
  * @brief 取最新反馈快照
  * @return ArmFeedback 副本
  */
 ArmFeedback arm_pose_feedback();
-
-/**
- * @brief 上电自检结果
- * @return bit0 = 中立位不可用（0 = 中立位可达，可以按 Start）
- */
-unsigned arm_pose_bad_pose_mask();

@@ -7,6 +7,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "app.h"
+#include "arm_pose.hpp"
 #include "diagnostics.hpp"
 #include "hal_handles.h"
 #include "mode_control.hpp"
@@ -17,13 +18,13 @@
 
 /**
  * @brief 应用主任务（由 Core/Src/main.c 调用，永不返回）
- * @details 1 ms 一轮：板载 Key 去抖 → 读手柄 → 模式分发 → 写电机/舵机 → 500 ms 上报。
- * @note 板载 Key 是硬件层面的第二道急停：手柄断线时 mode_control 也会自行停止，
- *       这条不依赖无线链路。
+ * @details 1 ms 一轮：板载 Key 去抖 → 读手柄 → 按键分发 → 写电机/舵机 → 500 ms 上报。
+ * @note 板载 Key 是硬件层面的第二道急停：底盘停转、机械臂冻结在当前姿态，
+ *       不依赖无线链路。手柄断线时 mode_control 也会自行停止。
  */
 extern "C" void main_task() {
-    init_outputs();
     ps2_init(hspi2);
+    init_outputs();
     mode_control_init(HAL_GetTick());
 
     constexpr uint32_t kReportMs = 500;
@@ -51,13 +52,17 @@ extern "C" void main_task() {
 
         const bool stopped = output.stopped || emergency_stop;
         const DriveCommand drive = stopped ? DriveCommand{} : output.drive;
+        // 板载 Key 与 L3+R3 同语义：不止停底盘，机械臂也冻结（清 jog、target 不动）；
+        // 解除后 arm_pose_update 会继续走向原目标。
+        const ArmCommand arm =
+            (emergency_stop && !output.stopped) ? arm_pose_hold(HAL_GetTick()) : output.arm;
         apply_motors(drive);
-        apply_servos(output.arm);
+        apply_servos(arm);
 
         const uint32_t report_ms = kReportMs;
         if (HAL_GetTick() - last_report >= report_ms) {
             report_status(frame, drive, stopped, key_pressed);
-            report_arm(output.arm, output.arm_fb);
+            report_arm(arm, output.arm_fb);
             last_report = HAL_GetTick();
         }
         HAL_Delay(1);

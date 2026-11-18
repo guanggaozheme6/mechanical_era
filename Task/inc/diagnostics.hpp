@@ -30,7 +30,7 @@ void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_s
 /**
  * @brief 上报一条机械臂状态（500 ms 一次）
  * @details 前 4 个字段 S1..S4 的位置一个字节都不动（标定手法依赖它），后面追加
- *          xy / tgt / th / ok / lim / wall / poses / bu。
+ *          xy / tgt / th / ok / lim / wall / neutral_ok / bu。
  * @param command 本帧实际下发的四路舵机指令
  * @param feedback 解算与状态反馈
  */

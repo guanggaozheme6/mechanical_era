@@ -38,9 +38,10 @@ DriveCommand mix_drive(int forward, int strafe, int rotation,
                        car_config::MecanumLayout layout = car_config::kMecanumLayout);
 
 /**
- * @brief 手柄 → 底盘指令（模式一）
- * @details 左摇杆平移、L2/R2 自转、方向键 80% 覆盖平移。只挡断线；
- *          停车判定的唯一真值在 mode_control（急停 latch + 断线）。
+ * @brief 手柄 → 底盘指令
+ * @details 左摇杆平移、L1/R1 原地左/右转；扳机与方向键已分别归夹爪和腕（v0.4），
+ *          所以没有按钮备份平移。这里只挡断线；停车判定（急停 latch + 断线）
+ *          的唯一真值在 mode_control。
  * @param frame 解码后的手柄帧
  * @return 四路电机占空比；断线时全零
  */

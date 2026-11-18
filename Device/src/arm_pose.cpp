@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file           : arm_pose.cpp
- * @brief          : 机械臂编排层实现：预设/笛卡尔入口 → 解算 → 关节层（Device 层）
+ * @brief          : 机械臂编排层实现：中立位/笛卡尔入口 → 解算 → 关节层（Device 层）
  ******************************************************************************
  */
 
@@ -34,8 +34,7 @@ namespace {
 
 using arm_config::kGeom;
 using arm_config::kMotion;
-using arm_config::kPoseCount;
-using arm_config::kPoses;
+using arm_config::kNeutralPose;
 using arm_config::kServoCount;
 using arm_config::kWorkspace;
 
@@ -44,7 +43,7 @@ using arm_config::kWorkspace;
 /**
  * @brief 上电时四路的目标行程（必须落在 kWorkspace 内）
  * @details percent=0 意味着大臂竖直 + 小臂半折(45°)，末端绕在肩上方，
- *          不在工作区里；上电点直接对齐 kPoses[Home]=(105.2, 38.3)。
+ *          不在工作区里；上电点直接对齐 kNeutralPose=(105.2, 38.3)。
  */
 constexpr float kZeroPercent[kServoCount] = {-66.0F, -86.0F, 0.0F, 0.0F};
 
@@ -89,7 +88,7 @@ float g_cart_vx = 0.0F; // 一次性，update 后清零（与 jog 同语义）
 float g_cart_vy = 0.0F;
 uint32_t g_last_ms = 0U;
 ArmFeedback g_fb;
-unsigned g_bad_pose_mask = 0U;
+bool g_neutral_ok = true; // 上电自检：中立位可达且不越限
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -130,14 +129,14 @@ void refresh_feedback() {
     g_fb.shoulder_deg = arm_kinematics::percent_to_deg(kGeom.shoulder, s1);
     g_fb.elbow_deg = arm_kinematics::percent_to_deg(kGeom.elbow, s2);
     g_fb.bringup = kBringup;
-    g_fb.bad_poses = g_bad_pose_mask;
+    g_fb.neutral_ok = g_neutral_ok;
 }
 
 /**
- * @brief 绝对值入口：两级钳位 + IK + 写入关节层（预设 / 上位机用的那条路）
+ * @brief 绝对值入口：两级钳位 + IK + 写入关节层（中立位 / 上位机用的那条路）
  * @details 钳位顺序不能反：先矩形（穿肩轴 / 力矩 / 折叠死区），再圆环（够不着）。
  *          越界**不拒绝**：矩形直接夹到边，半径沿方位缩到"限位允许的可控边界"，
- *          然后把钳位结果照样下发 —— 按预设/给坐标是「去一个点」，不是「沿某个方向走」，
+ *          然后把钳位结果照样下发 —— 回中立位 / 给坐标是「去一个点」，不是「沿某个方向走」，
  *          所以这里保留钳位照发；摇杆那条路才是贴边滑（见 cartesian_step + arm_limit）。
  *          只有 θ1 越出结构限位才真的不动作（那个方位本身够不到，硬掰会让臂甩到别处）。
  * @param x_mm 请求 x（mm）
@@ -252,7 +251,7 @@ void arm_pose_init(uint32_t now_ms) {
     g_cart_vy = 0.0F;
     g_last_ms = now_ms;
     g_fb = ArmFeedback{};
-    g_bad_pose_mask = 0U;
+    g_neutral_ok = true;
 
     if (kBringup) {
         // 标定版：直接给固定百分比，跳过解算与全部钳位（限位本身就是要量出来的）。
@@ -267,14 +266,10 @@ void arm_pose_init(uint32_t now_ms) {
 
     arm_joint::bank_configure(g_bank, arm_config::kJointLimits, kZeroPercent);
 
-    // 上电全表校验：预设坐标填错时立刻可见，而不是等按到那一条才发现不动。
-    for (unsigned i = 0; i < kPoseCount; ++i) {
-        const arm_kinematics::Solution solution = arm_kinematics::solve_xy(
-            kGeom, kPoses[i].x_mm, kPoses[i].y_mm + sag_compensation(kPoses[i].x_mm));
-        if (!solution.reachable || solution.limited) {
-            g_bad_pose_mask |= 1U << i;
-        }
-    }
+    // 中立位自检：坐标填错时立刻可见（串口 neutral_ok=0），而不是等按 Start 才发现不动。
+    const arm_kinematics::Solution solution = arm_kinematics::solve_xy(
+        kGeom, kNeutralPose.x_mm, kNeutralPose.y_mm + sag_compensation(kNeutralPose.x_mm));
+    g_neutral_ok = solution.reachable && !solution.limited;
     refresh_feedback();
 }
 
@@ -291,15 +286,14 @@ void arm_pose_request_neutral() {
     g_cart_vx = 0.0F;
     g_cart_vy = 0.0F;
 
-    if ((g_bad_pose_mask & 1U) != 0U) {
+    if (!g_neutral_ok) {
         g_fb.at_wall = true; // 上电自检就没过（中立位够不到），拒绝下发
         return;
     }
 
-    const arm_config::Preset &pose = kPoses[0];
     float applied_x = 0.0F;
     float applied_y = 0.0F;
-    if (!apply_xy(pose.x_mm, pose.y_mm, applied_x, applied_y)) {
+    if (!apply_xy(kNeutralPose.x_mm, kNeutralPose.y_mm, applied_x, applied_y)) {
         return;
     }
     g_fb.target_x_mm = applied_x;
@@ -427,37 +421,13 @@ ArmCommand arm_pose_hold(uint32_t now_ms) {
 }
 
 /**
- * @brief 取某一路当前的整数行程百分比
- * @param joint 关节序号 0..3
- * @return -100..100；越界返回 0
- */
-int arm_pose_value(unsigned joint) {
-    if (joint >= kServoCount) {
-        return 0;
-    }
-    return arm_joint::output_percent(g_bank.channel[joint]);
-}
-
-/**
  * @brief 四路是否都已到达目标
  * @return true 表示四路都在 settle 容差内
  */
 bool arm_pose_at_target() { return arm_joint::bank_at_target(g_bank, kMotion.settle_percent); }
 
 /**
- * @brief 夹爪接在哪一路舵机上
- * @return 通道号（arm_config::kGripperServo）
- */
-unsigned arm_pose_gripper_servo() { return arm_config::kGripperServo; }
-
-/**
  * @brief 取最新反馈快照
  * @return ArmFeedback 副本
  */
 ArmFeedback arm_pose_feedback() { return g_fb; }
-
-/**
- * @brief 上电自检结果
- * @return bit i = 第 i 条预设不可用（0 = 八条全好）
- */
-unsigned arm_pose_bad_pose_mask() { return g_bad_pose_mask; }

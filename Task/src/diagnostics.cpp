@@ -79,22 +79,22 @@ void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_s
 
 /**
  * @brief 上报机械臂状态
- * @details S1..S4 之后追加解算反馈：xy / tgt / th / ok / lim / wall / poses / bu。
+ * @details S1..S4 之后追加解算反馈：xy / tgt / th / ok / lim / wall / neutral_ok / bu。
  * @param command 本帧四路舵机指令
  * @param feedback 解算与状态反馈
  */
 void report_arm(const ArmCommand &command, const ArmFeedback &feedback) {
-    char message[160]; // 本格式约 105 字符，留足余量
+    char message[160]; // 本格式约 110 字符，留足余量
     const int length = std::snprintf(
         message, sizeof(message),
         "ARM S1=%d S2=%d S3=%d S4=%d xy=(%.1f,%.1f) tgt=(%.1f,%.1f) th=(%.1f,%.1f) "
-        "ok=%u lim=%u wall=%u poses=0x%02X bu=%u\r\n",
+        "ok=%u lim=%u wall=%u neutral_ok=%u bu=%u\r\n",
         command.servo[0], command.servo[1], command.servo[2], command.servo[3],
         static_cast<double>(feedback.x_mm), static_cast<double>(feedback.y_mm),
         static_cast<double>(feedback.target_x_mm), static_cast<double>(feedback.target_y_mm),
         static_cast<double>(feedback.shoulder_deg), static_cast<double>(feedback.elbow_deg),
         static_cast<unsigned>(feedback.reachable), static_cast<unsigned>(feedback.limited),
-        static_cast<unsigned>(feedback.at_wall), static_cast<unsigned>(feedback.bad_poses),
+        static_cast<unsigned>(feedback.at_wall), feedback.neutral_ok ? 1U : 0U,
         static_cast<unsigned>(feedback.bringup));
     if (length > 0 && static_cast<unsigned>(length) < sizeof(message)) {
         HAL_UART_Transmit(&huart3, reinterpret_cast<uint8_t *>(message),

@@ -147,7 +147,8 @@ void ps2_update() {
     if (frame.connected) {
         if (latest_frame.connected &&
             (frame.buttons != latest_frame.buttons || frame.left_x != latest_frame.left_x ||
-             frame.left_y != latest_frame.left_y)) {
+             frame.left_y != latest_frame.left_y || frame.right_x != latest_frame.right_x ||
+             frame.right_y != latest_frame.right_y)) {
             ++ps2_debug.input_changes;
         }
         last_valid_ms = HAL_GetTick();

@@ -6,8 +6,8 @@ STM32F103（256 KB Flash / 48 KB RAM）上的麦轮底盘 + 平面 2R 机械臂�
 
 - 芯片：STM32F103xE（`mechanical_era.ioc`），HSE 8 MHz × 9 = **72 MHz**
 - 工具链：CMake + Ninja + PATH 里的 `arm-none-eabi-`（GCC 15.3.1），`-Wall -Wextra -Werror`
-- 当前构建：Debug `FLASH 46376 B (17.7%)` / `RAM 3104 B (6.3%)`；
-  Release `FLASH 32704 B (12.5%)` / `RAM 3104 B (6.3%)`；两者均 0 error / 0 warning
+- 当前构建：Debug `FLASH 46356 B (17.7%)` / `RAM 3104 B (6.3%)`；
+  Release `FLASH 32648 B (12.5%)` / `RAM 3104 B (6.3%)`；两者均 0 error / 0 warning
 - 二维仿真：`sim/index.html`（双击即开，无后端；几何/标定/限位/导出都在里面，见 `sim/README.md`）
 - 待办与坑：`Debug.md`（仓库根目录）
 
@@ -164,7 +164,8 @@ ps2_update() ─► ps2_read() ─► mode_control_update(frame, now) ─┬─�
 - 急停期间：底盘停转、机械臂冻结在当前姿态（不回中、不松爪），`Start` / 夹爪 / 腕全部不响应；
   停机期间按下的键不会被记住，解除后不会补执行。
 - 手柄断线或有效报文超时 100 ms：电机停止，机械臂保持当前姿态（不回中）。
-- 板上 Key（PA12）去抖 20 ms，按一次锁定、再按一次解除，锁定时底盘停止输出。
+- 板上 Key（PA12）去抖 20 ms，按一次锁定、再按一次解除；锁定时**底盘停止输出、机械臂冻结在当前姿态**
+  （与 `L3+R3` 同一条 `arm_pose_hold()` 语义，解除后继续走向原目标）。
 
 **两条机械约束**
 
@@ -182,7 +183,7 @@ USART3（PC10），115200 8N1，每 500 ms 四行：
 PS2 online=1 mode=73 keys=0000 LX=128 LY=128 RX=128 RY=128 M=0,0,0,0 STOP=0 KEY=0 bad=0
 PID4 target=0 ticks=0 pwm=0 stalled=0
 M4HW-v1 req=0 ccr=1500 arr=65535 run=1 en=1 moe=1 oc=6 pa11=0 pb10=0 pb11=0 out=0,0 map=1A045
-ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=1 lim=0 wall=0 poses=0x00 bu=0
+ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=1 lim=0 wall=0 neutral_ok=1 bu=0
 ```
 
 - `mode=` 是 PS2 协议模式字（0x41 绿灯数字 / 0x73 红灯模拟 / 0x79 双震动）。
@@ -195,7 +196,7 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 - `S1..S4` 位置固定（标定手法依赖它）；`xy` 是 FK 回算的当前末端，`tgt` 是本帧解算用的目标，
   `th` 是连杆角；`ok`/`lim`/`wall` 三个**独立**标志：`ok=1` 精确命中（没缩步没裁角）、
   `lim=1` 一步都走不动（正对墙 / 墙角，整帧未下发）、`wall=1` 顶住边界但还在走（缩步 / 切向滑，已下发）；
-  `poses` 是上电自检（`bit0` = 中立位不可用，`0x00` = 可以按 Start）；
+  `neutral_ok` 是上电自检（`1` = 中立位可达、可以按 Start；`0` = 坐标填错或越限，按 Start 不动）；
   `bu=1` 表示这是 `ARM_BRINGUP` 标定版（正常版恒 0，标完看到 1 就是烧错了）。
 
 ---
@@ -216,7 +217,7 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 | `elbow.range_min/max_deg` | **−42 / +132** | `kGeom` | 舵机 180° 行程两端各退 3°；前超伸 42°／后折叠 132°，内半径按侧不同 |
 | `elbow_sign` | +1 | `kGeom` | 高肘（上吊）；+1 取肘点更高的一支，−1 整体镜像 |
 | `kWorkspace` | 70/116, −20/85 | `arm_config.hpp` | **软边界**：框内靠圆环钳位投影到弧带上 |
-| `kPoses[1]` | 中立位 (105.2, 38.3) | `arm_config.hpp` | **只留 xy 一条**，等于上电点（`kZeroPercent` 的 FK）；按 Start 回这里 |
+| `kNeutralPose` | 中立位 (105.2, 38.3) | `arm_config.hpp` | 唯一的目标姿态；等于上电点（`kZeroPercent` 的 FK），按 Start 回这里 |
 | `kZeroPercent[4]` | −66 / −86 / 0 / 0 | `arm_pose.cpp` | 上电四路行程（S1/S2 落在中立位，S3/S4 居中） |
 | 夹爪正负方向 | 正 = 张开 | `mode_control.cpp` | 标定第一件事：按 `L2`/`R2` 看方向，反了改 `gripper += 100` 的符号 |
 | 腕正负方向 | 正 = 左转 | `mode_control.cpp` | `kWristLeftPercent = +100`；实物反了就对调这两行 |
@@ -231,10 +232,11 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 `kJointLimits` 不手填：由 `percent_of()` 从角度限位在编译期派生。改角度限位即可，别维护第二套百分比。
 
 标定顺序：**量连杆 → 定零点 → 定比例 → 定限位 → 校验模型（推到 (105.2,38.3) 目测偏差 < 5 mm）
-→ 上电不碰手柄看 `poses=0x00` → 按 Start 确认回到同一个姿态**。
+→ 上电不碰手柄看 `neutral_ok=1` → 按 Start 确认回到同一个姿态**。
 
-`arm_config.hpp` 末尾有一整套 `static_assert`：连杆为正、`|L1−L2| > 10`、限位不越 ±100、
-`zero == 行程中点`、角度跨度 ≤ 200%、工作区边界合理、`x_max ≤ L1+L2`、`slew_ok()`、中立位在工作区内。
+`arm_config.hpp` 末尾有一整套 `static_assert`：连杆为正、`|L1−L2| > 10`、`zero_at_mid()`、
+`span_within_travel()`（跨度 ≤ 200%）、两端余量为正、限位不越 ±100、工作区边界合理、
+`x_max ≤ L1+L2`、`slew_ok()`、中立位在工作区内。
 **改了几何/限位/工作区，中立位坐标要一起改**（并把 `sim/arm_core.js` 的默认几何同步），
 否则直接编不过 —— 这是保护，不是麻烦。改完跑 `node sim/verify/struct_limit.js`：
 它会拿 `arm_config.hpp` 的真值重算内半径、弧带厚度与限位余量。
@@ -299,7 +301,7 @@ ARM S1=-19 S2=-51 S3=0 S4=0 xy=(190.0,10.0) tgt=(190.0,10.0) th=(-17.2,43.8) ok=
 可以直接用 PC 的 g++ 编成 exe 跑。三套现成的（都在仓库根目录执行）：
 
 ```bash
-# ① 按键映射与整条控制链：8 项断言（左/右摇杆、L1R1、L2R2、←→、Start、旧预设键无效）
+# ① 按键映射与整条控制链：9 项断言（左/右摇杆、L1R1、L2R2、←→、Start、旧预设键无效、坐标入口）
 g++ -std=c++14 -O2 -I Include -I Algorithm/inc -I Device/inc -I Task/inc sim/verify/keymap_test.cpp Task/src/mode_control.cpp Device/src/arm_pose.cpp Device/src/arm_joint.cpp Device/src/drive_control.cpp Device/src/arm_control.cpp Device/src/ps2_protocol.cpp Algorithm/src/arm_kinematics.cpp Algorithm/src/arm_limit.cpp -o sim/verify/keymap_test.exe && ./sim/verify/keymap_test.exe
 
 # ② 摇杆限位（贴边滑）：与 sim/stick_limit.js 逐帧对拍 + 6 项行为断言
@@ -309,7 +311,7 @@ g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_limit.cpp Algorithm/src/ar
 g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_kinematics.cpp sim/verify/probe.cpp -o sim/verify/probe.exe && node sim/verify/compare.js
 ```
 
-最近一次结果：① 8/8 PASS ② 6/6 PASS ③ PASS。
+最近一次结果：① 9/9 PASS ② 6/6 PASS ③ PASS。
 比上车试便宜得多：正逆解互逆误差、限位与 jog 会不会被绕过、急停/断线时是否真的冻结，都在这里验。
 
 ---
@@ -323,10 +325,10 @@ g++ -std=c++14 -O2 -I Algorithm/inc Algorithm/src/arm_kinematics.cpp sim/verify/
 | 底盘自转 | `L2` / `R2` | **`L1` / `R1`**（扳机让给夹爪） |
 | 夹爪 | `L2` / `R2`（仅机械臂模式） | `L2` / `R2`（一直可用） |
 | 腕 roll | `L1` / `R1`（仅机械臂模式） | **`←` / `→`**（正输出 = 左转） |
-| 预设姿态 | `kPoses[8]`，8 个按键各绑一条，带 gripper/wrist 两列 | **`kPoses[1]`**：只有中立位 xy；`Pose` 枚举、绑定表、`arm_pose_request(index)` 全删，新增 `arm_pose_request_neutral()` |
+| 预设姿态 | `kPoses[8]`，8 个按键各绑一条，带 gripper/wrist 两列 | **`kNeutralPose`**：只有中立位 xy；`Preset`/`Pose` 枚举、`kPoses[]`、绑定表、`arm_pose_request(index)` 全删，新增 `arm_pose_request_neutral()` |
 | 方向键 ↑↓ | 平移按钮备份（80%） | 无功能（`kButtonDutyPercent` 一并删除） |
-| 串口 | `op=DRV/ARM` | 删 `op=`，加 `RX/RY` |
-| 上电点 / 中立位 | 上电点 = `kPoses[Home]` | 上电点 = `kZeroPercent`，Start 回到 `kPoses[0]`（同一点） |
+| 串口 | `op=DRV/ARM` | 删 `op=`，加 `RX/RY`；`poses=0x..` 改 `neutral_ok=0/1` |
+| 上电点 / 中立位 | 上电点 = `kPoses[Home]` | 上电点 = `kZeroPercent`，Start 回到 `kNeutralPose`（同一点） |
 
 删掉的东西没有留兼容层：想恢复"按模式切换"，得把 `OperationMode`、两个入口与
 `ControlOutput::mode` 一起加回来 —— 也就是反向做一次这张表。

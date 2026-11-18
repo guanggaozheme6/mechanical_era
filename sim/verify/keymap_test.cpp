@@ -14,8 +14,9 @@
  *   K4 L1/R1 原地自转（左右轮反向），L2/R2 不再参与底盘
  *   K5 L2/R2 = 夹爪 松/紧（S3 变化），不影响 S1/S2
  *   K6 ←/→ = 腕 roll（正 = 左转），不影响 S3
- *   K7 Start = 回中立位（fb.target 回到 kPoses[0]），且不动 S3/S4
+ *   K7 Start = 回中立位（fb.target 回到 kNeutralPose），且不动 S3/S4
  *   K8 旧预设键（↑↓△○╳□）已无功能：什么都不动
+ *   K9 arm_pose_request_xy() 仍可用（上位机 / 动作序列的唯一入口，v0.4 没有按键调它）
  */
 #include "mode_control.hpp"
 #include "ps2_protocol.hpp"
@@ -242,6 +243,19 @@ int main() {
         check(after.tx == before.tx && after.ty == before.ty && after.s1 == before.s1 &&
                   after.s2 == before.s2 && after.s3 == before.s3 && after.s4 == before.s4,
               "K8 旧预设键 / Select 已无功能", detail);
+    }
+
+    /* ---- K9：绝对坐标入口（上位机 / 动作序列）仍可用 ---- */
+    {
+        const bool ok = arm_pose_request_xy(114.0F, 0.0F);
+        const ArmFeedback feedback = arm_pose_feedback();
+        char detail[160];
+        std::snprintf(detail, sizeof(detail), "request_xy(114,0) → tgt=(%.1f,%.1f) 命中=%d",
+                      static_cast<double>(feedback.target_x_mm),
+                      static_cast<double>(feedback.target_y_mm), ok ? 1 : 0);
+        check(ok && std::fabs(feedback.target_x_mm - 114.0F) < 0.4F &&
+                  std::fabs(feedback.target_y_mm) < 0.4F,
+              "K9 arm_pose_request_xy 直接给坐标", detail);
     }
 
     std::printf("\n%s（%d 项失败）\n", g_failures == 0 ? "PASS" : "FAIL", g_failures);

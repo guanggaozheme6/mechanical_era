@@ -10,15 +10,15 @@
  *       Algorithm/src/arm_kinematics.cpp sim/verify/struct_probe.cpp -o sim/verify/struct_probe.exe
  *   sim/verify/struct_probe.exe
  *
- * 为什么用探针而不是在 JS 里再抄一份限位：kGeom / kWorkspace / kPoses 只有 arm_config.hpp
- * 一个真值。抄到 JS 里迟早漂移（这条流水线已经踩过：固件改了限位、仿真还挂着老值）。
+ * 为什么用探针而不是在 JS 里再抄一份限位：kGeom / kWorkspace / kNeutralPose 只有
+ * arm_config.hpp 一个真值。抄到 JS 里迟早漂移（这条流水线已经踩过：固件改了限位、仿真还挂着老值）。
  *
  * 输出（每行一条，空白分隔）：
- *   geom   L1 L2 zero1 dpp1 min1 max1 zero2 dpp2 min2 max2 elbow_sign
- *   limits pct_min1 pct_max1 pct_min2 pct_max2
- *   ws     x_min x_max y_min y_max
- *   pose   i x y reachable limited s1_pct s2_pct th1_deg th2_deg
- *   selftest bad_mask
+ *   geom    L1 L2 zero1 dpp1 min1 max1 zero2 dpp2 min2 max2 elbow_sign
+ *   limits  pct_min1 pct_max1 pct_min2 pct_max2
+ *   ws      x_min x_max y_min y_max
+ *   neutral x y reachable limited s1_pct s2_pct th1_deg th2_deg
+ *   selftest neutral_ok
  */
 #include "arm_config.hpp"
 #include "arm_kinematics.hpp"
@@ -48,21 +48,14 @@ int main() {
                 static_cast<double>(arm_config::kWorkspace.y_min_mm),
                 static_cast<double>(arm_config::kWorkspace.y_max_mm));
 
-    unsigned bad = 0U;
-    for (unsigned i = 0U; i < arm_config::kPoseCount; ++i) {
-        const arm_config::Preset &p = arm_config::kPoses[i];
-        const arm_kinematics::Solution s = arm_kinematics::solve_xy(g, p.x_mm, p.y_mm);
-        if (!s.reachable || s.limited) {
-            bad |= 1U << i;
-        }
-        std::printf("pose %u %.6f %.6f %d %d %.6f %.6f %.6f %.6f\n", i,
-                    static_cast<double>(p.x_mm), static_cast<double>(p.y_mm),
-                    s.reachable ? 1 : 0, s.limited ? 1 : 0,
-                    static_cast<double>(s.shoulder_percent),
-                    static_cast<double>(s.elbow_percent), static_cast<double>(s.shoulder_deg),
-                    static_cast<double>(s.elbow_deg));
-    }
+    // v0.4 起固件只有一个目标姿态：中立位（= 上电点）。规划用的 8 条坐标在仿真页里。
+    const arm_config::Point &n = arm_config::kNeutralPose;
+    const arm_kinematics::Solution s = arm_kinematics::solve_xy(g, n.x_mm, n.y_mm);
+    std::printf("neutral %.6f %.6f %d %d %.6f %.6f %.6f %.6f\n", static_cast<double>(n.x_mm),
+                static_cast<double>(n.y_mm), s.reachable ? 1 : 0, s.limited ? 1 : 0,
+                static_cast<double>(s.shoulder_percent), static_cast<double>(s.elbow_percent),
+                static_cast<double>(s.shoulder_deg), static_cast<double>(s.elbow_deg));
 
-    std::printf("selftest %u\n", bad);
+    std::printf("selftest %u\n", (s.reachable && !s.limited) ? 1U : 0U);
     return 0;
 }

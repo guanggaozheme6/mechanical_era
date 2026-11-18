@@ -260,7 +260,7 @@
     </details>
 
     <details class="cat">
-      <summary>预设姿态<span class="catmeta" id="metaPose">kPoses</span></summary>
+      <summary>预设姿态<span class="catmeta" id="metaPose">规划坐标</span></summary>
       <div class="catbody">
         <div id="poses"></div>
         <div class="btnrow">
@@ -282,7 +282,7 @@
           <button class="danger" id="btnReset">重置全部</button>
           <input type="file" id="fileIn" accept=".json,application/json" hidden>
         </div>
-        <div class="hint">hpp 片段按 <code>Include/arm_config.hpp</code> 的写法给出 kGeom / kWorkspace / kMotion / kPoses，可直接对照粘贴。</div>
+        <div class="hint">hpp 片段按 <code>Include/arm_config.hpp</code> 的写法给出 kGeom / kWorkspace / kMotion / kNeutralPose，可直接对照粘贴。</div>
       </div>
     </details>
   </aside>
@@ -323,7 +323,8 @@ const DEFAULT_CFG = {
   ws: { xMin: 0, xMax: 0, yMin: 0, yMax: 0 },   // 首帧按可达域拟合
   motion: {
     cartSpeed: 50, slew: 300, settle: 1, sag: 0, maxElapsedMs: 100,
-    jog: [150, 150, 200, 150]
+    jog: [150, 150, 200, 150],
+    boxTol: 0.02        // 矩形当墙的线性化残差容差（mm）→ kMotion.stick_box_tol_mm
   },
   state: { p1: -66, p2: -86, p3: 0, p4: 0, graspMm: 23.0 },
   // 摇杆（左摇杆 → 末端速度 → 限位策略）。与固件 arm_pose_stick_velocity + 限位那一步对应
@@ -2504,18 +2505,18 @@ function buildHpp() {
   const m = CFG.motion;
   const d = derived();
   const fore = r2(Core.foreLength(g));
-  const rows = CFG.poses.map(function (p, i) {
+  // 固件只有中立位一条；其余按规划坐标打进注释，别生成编不过的 kPoses[8]（D-5）。
+  const home = CFG.poses[0] || { x: 105.2, y: 38.3 };
+  const planRows = CFG.poses.map(function (p, i) {
     const scan = scanGraspOK(p.x, p.y);
     const s = scan.length ? scan[Math.floor(scan.length / 2)].sol : Core.solveXY(g, p.x, p.y);
     const stxt = scan.length
       ? "命中 s=" + scan[0].s.toFixed(0) + "~" + scan[scan.length - 1].s.toFixed(0)
       : "整条夹爪咬不到";
-    const note = p.key + "  β=" + s.betaDeg.toFixed(0) + "° r=" + s.r.toFixed(1) + " " + stxt;
-    return (
-      "    {" + fF(p.x, 1) + ", " + fF(p.y, 1) + ", " + fF(p.grip, 1) + ", " + fF(p.wrist, 1) + "}," +
-      "  // " + note
-    );
-  }).join("\n");
+    return "//   " + (i === 0 ? "neutral" : "P" + i) + "  " + p.key.padEnd(8, " ") +
+      " (" + fF(p.x, 1) + ", " + fF(p.y, 1) + ")  grip=" + fF(p.grip, 1) + " wrist=" + fF(p.wrist, 1) +
+      "  β=" + s.betaDeg.toFixed(0) + "° r=" + s.r.toFixed(1) + "  " + stxt + "\n";
+  }).join("");
 
   const bad = selfChecks().filter(function (r) { return !r.ok; });
   const txt =
@@ -2536,7 +2537,7 @@ function buildHpp() {
       : "") +
     " *\n" +
     " * @note fore_mm 已按「腕点连杆 + 工具延伸」合并，粘进去就不用再拆工具段。\n" +
-    " * @note 预设是仿真占位值，实物工位定了要重标（见 README §7.1）。\n" +
+    " * @note v0.4 起固件只有中立位：kNeutralPose 一条。下面是仿真页的 8 条规划坐标，只当挑点参考。\n" +
     (bad.length
       ? " * @warning 自检未过：" + bad.map(function (r) { return r.t; }).join("；") + "\n"
       : " * @note 自检全部通过（含 slew 4 倍余量、zero = 行程中点）。\n") +
@@ -2557,10 +2558,12 @@ function buildHpp() {
     "    " + fF(m.cartSpeed, 1) + ", " + fF(m.slew, 1) + ", " + fF(m.settle, 1) + ", " +
     fF(m.sag, 2) + ", " + Math.round(m.maxElapsedMs) + "U, {" +
     m.jog.map(function (v) { return Math.round(v); }).join(", ") + "},\n" +
+    "    " + fF(CFG.stick.damping, 2) + ", " + fF(m.boxTol, 2) + ",  // stick_damping / stick_box_tol\n" +
     "};\n\n" +
-    "constexpr Preset kPoses[8] = {\n" +
-    rows + "\n" +
-    "};\n";
+    "// 固件唯一的目标姿态（= kZeroPercent 的 FK，按 Start 回这里）\n" +
+    "constexpr Point kNeutralPose = {" + fF(home.x, 1) + ", " + fF(home.y, 1) + "};\n\n" +
+    "// ---- 以下是仿真页的规划坐标，不进固件（v0.4 没有预设表） ----\n" +
+    planRows;
 
   return txt;
 }
