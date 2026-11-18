@@ -135,7 +135,7 @@ Solution solve_xy(const Model &model, float x_mm, float y_mm) {
     const float l1 = model.upper_mm;
     const float l2 = model.fore_mm;
 
-    // ---- 1. 非法输入兜底（D2 的扩展：不只 r==0，NaN/Inf 也不能进来）----
+    // ---- 1. 非法输入兜底（不只 r==0，NaN/Inf 也不能进来）----
     float x = x_mm;
     float y = y_mm;
     if (!finite(x) || !finite(y)) {
@@ -145,7 +145,7 @@ Solution solve_xy(const Model &model, float x_mm, float y_mm) {
     }
 
     // ---- 2. 圆环钳位：内边界取「角度限位允许的最小半径」，外边界 L1+L2 ----
-    //      内边界不能用 |L1−L2|：那要求 θ2=180°；B 方案右半平面只到 −45°、左半平面到 +135°。
+    //      内边界不能用 |L1−L2|：那要求 θ2=180°；本工程右半平面只到 −45°、左半平面到 +135°。
     //      越界一律沿目标方位缩/放到边界上，保证"推到头就顶住"，不出现跳空。
     const float r = std::sqrt(x * x + y * y);
     const float r_max = l1 + l2;
@@ -196,7 +196,7 @@ Solution solve_xy(const Model &model, float x_mm, float y_mm) {
     // 效果：左半平面和右半平面解出来的构型关于 +y 轴镜像、形状完全一致；
     // 右下方的近点还会自动避开 θ1 < 0 那个倒退支。
     // elbow_sign 保留为整体镜像开关：+1 = 高肘（默认），-1 = 低肘。
-    // 这条规则要求小臂限位跨 0（B 方案的 −45°~+135° 满足）；若限位退化成 [0,180]、
+    // 这条规则要求小臂限位跨 0（本工程的 −45°~+135° 满足）；若限位退化成 [0,180]、
     // 只剩 +θ2 一支，右半平面会被整片判成超限 —— 换限位时必须一起看这条。
     // 注意：目标正好落在 +y 轴上时两支等高，跨过 x=0 会翻支（θ1 从 β+α 跳到 β−α），
     // 折叠角大时这一次跳变幅度可观，标定时别沿着肩轴竖线走。
@@ -220,7 +220,7 @@ Solution solve_xy(const Model &model, float x_mm, float y_mm) {
         d1 -= 360.0F;
     }
 
-    // ---- 4. 角度限位。带容差，边界点不误报（D3）----
+    // ---- 4. 角度限位。带容差，边界点不误报 ----
     const float d1_clamped = clampf(d1, model.shoulder.range_min_deg, model.shoulder.range_max_deg);
     const float d2_clamped = clampf(d2, model.elbow.range_min_deg, model.elbow.range_max_deg);
     solution.limited = (std::fabs(d1_clamped - d1) > kLimitEpsDeg) ||

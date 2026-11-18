@@ -28,7 +28,7 @@ constexpr unsigned kCount = 4U;
 void init();
 
 /**
- * @brief 自上次调用以来的计数增量(motor.c)
+ * @brief 自上次调用以来的计数增量
  * @param channel 通道号 0..3
  * @return 计数增量；越界返回 0
  */

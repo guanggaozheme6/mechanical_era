@@ -7,12 +7,10 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "outputs.hpp"
+#include "hal_handles.h"
 #include "main.h"
 #include "motor.hpp"
 #include <algorithm>
-
-extern "C" TIM_HandleTypeDef htim1;
-extern "C" TIM_HandleTypeDef htim8;
 
 /* Private typedef -----------------------------------------------------------*/
 namespace {

@@ -8,13 +8,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "app.h"
 #include "diagnostics.hpp"
+#include "hal_handles.h"
 #include "mode_control.hpp"
 #include "outputs.hpp"
 #include "ps2.hpp"
-
-/* Private constants ---------------------------------------------------------*/
-
-extern "C" SPI_HandleTypeDef hspi2;
 
 /* Exported functions --------------------------------------------------------*/
 

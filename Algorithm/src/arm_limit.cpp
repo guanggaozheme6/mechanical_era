@@ -52,8 +52,7 @@ bool finite(float value) { return std::isfinite(value); }
  *          而不是把末端拽到边上（拽到边上正是末端域的毛病）。
  *          唯一的例外是「不比起点更越界」：顶在边界上时，任何关节运动都会让末端在法向上
  *          多出零点零几毫米（法向剔除是线性化投影，有残差），若严格按「必须进框」判，
- *          沿边切向滑会全被判死（实测 60 帧只走 15 mm）。所以判据是
- *          「越界量 ≤ max(起始越界量, tol)」。
+ *          沿边切向滑会全被判死。所以判据是「越界量 ≤ max(起始越界量, tol)」。
  * @param model 几何模型
  * @param p1 大臂行程百分比
  * @param p2 小臂行程百分比
@@ -61,9 +60,8 @@ bool finite(float value) { return std::isfinite(value); }
  * @param base_over 起点本来就越界多少（mm）
  * @param tol 线性化残差容差（mm）
  * @return true 表示可下发
- * @note 固件没有「撞底盘 / 钻地面」的判据：真要做干涉，就在这里加一段线段采样
- *       （sim/verify/stick_test.js 的 feasible() 是现成写法），或由调用方在拿到
- *       Step 之后再 gate 一次 —— 位置与参数都留在这个函数的入参里。
+ * @note 本层没有「撞底盘 / 钻地面」的判据：真要做干涉，就在这里加一段线段采样，
+ *       或由调用方在拿到 Step 之后再 gate 一次。
  */
 bool feasible_at(const arm_kinematics::Model &model, float p1, float p2, const Box &box,
                  float base_over, float tol) {

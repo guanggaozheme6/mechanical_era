@@ -28,7 +28,6 @@
 
 /**
  * @brief 机械臂反馈，给 mode_control 汇总、给串口打印
- * @note 放在 arm_pose.hpp（生产者一侧）而不是 mode_control.hpp：mode_control 只是搬运工。
  */
 struct ArmFeedback {
     float x_mm = 0.0F;         // 当前末端（FK 回算，基于 current）
@@ -54,7 +53,7 @@ void arm_pose_init(uint32_t now_ms);
 
 /**
  * @brief 请求第 index 条预设（0..7，见 arm_config::Pose）
- * @details 表驱动，不再有 8 个 if。进门先清笛卡尔速度，否则"按了预设先动一下再被拉回"。
+ * @details 索引即 mode_control 绑定表的 pose 字段，表驱动分发。
  *          坐标越界时会被钳到边界照发；只有该方位 θ1 越限、或该条上电自检没过时才不动。
  * @note 索引越界、或该条上电自检失败时不做任何动作，失败原因进 ArmFeedback。
  * @param index 预设索引 0..7

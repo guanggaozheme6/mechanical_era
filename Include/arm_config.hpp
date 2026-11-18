@@ -8,7 +8,7 @@
 /* Define to prevent recursive inclusion -------------------------------------*/
 #pragma once
 
-// 这里的每个数字都是"标定后该改的地方"，算法文件里不再出现任何硬编码数值。
+// 这里的每个数字都是"标定后该改的地方"，算法文件里不放硬编码数值。
 //
 // 注意：C++14（CMakeLists.txt 的 CXX_STANDARD 14 + CXX_EXTENSIONS OFF）不能用
 // designated initializers（.field = x 是 C++20）。只能按声明顺序位置初始化，
@@ -25,16 +25,14 @@ namespace arm_config {
 /* Exported constants --------------------------------------------------------*/
 
 /**
- * @brief 几何模型（B 方案）
+ * @brief 几何模型
  * @details 大臂 θ1 ∈ [0°,180°]，zero 90° = 竖直；小臂 θ2 ∈ [-45°,+135°]，zero 45° = 半折。
- *          B 的小臂行程不对称：以伸直为基准，前（超伸侧）只有 45°，后（折叠侧）135°。
- *          两路角度跨度都正好 180° = 200% 行程，两端零余量，标定差一格就是 0.9°。
- * @note zero_deg 必须是 (−45+135)/2 = 45，改成别的值就有一端溢出 200% 行程。
- *       L1/L2 是 11.18 实测；TBD-2/3/4（zero / deg_per_percent / 结构限位）还没标定，
- *       标定顺序见 README §7.1。
+ *          小臂行程不对称：以伸直为基准，前（超伸侧）只有 45°，后（折叠侧）135°。
+ *          两路角度跨度都是 180° = 200% 行程，两端零余量，一格行程约 0.9°。
+ * @note zero_deg 必须是 (−45+135)/2 = 45
  */
 constexpr arm_kinematics::Model kGeom = {
-    76.0F, 40.08F,                // L1 大臂 / L2 小臂（11.18 实测）
+    76.0F, 40.08F,                // L1 大臂 / L2 小臂（轴心距，实测）
     {90.0F, 0.9F, 0.0F, 180.0F},  // shoulder: zero=行程中点, deg/%, min, max
     {45.0F, 0.9F, -45.0F, 135.0F},// elbow   : zero=行程中点, deg/%, min, max
     +1,                           // elbow_sign = +1 高肘（上吊）构型
@@ -43,7 +41,7 @@ constexpr arm_kinematics::Model kGeom = {
 /**
  * @brief 内半径是否合理
  * @details 内半径 |L1-L2| 太小会让折叠区数值病态（r→0 时方向不可分辨）。
- * @note 10 mm 是下限：本车 15 mm（θ2=180° 的折叠点）刚好通过。
+ * @note 下限 10 mm：|L1−L2| 小于此值时折叠区的方向不可分辨。
  */
 constexpr bool inner_radius_ok() {
     const float diff = kGeom.upper_mm > kGeom.fore_mm ? kGeom.upper_mm - kGeom.fore_mm
@@ -102,14 +100,13 @@ struct Workspace {
 
 /**
  * @brief 笛卡尔工作区实例
- * @details B 方案的前半平面可达域是一条**弧带**，不是一个矩形：
+ * @details 前半平面可达域是一条**弧带**，不是一个矩形：
  *          θ2 在右半平面只能用 [−45°,0]（超伸侧只有 45°），所以半径只能落在
  *          108.12 ~ 116.08 mm（8 mm 厚），围成一条从正前方 (116,0) 扫到近乎竖直的带子。
- *          域宽（前后）根本不随 x 变，随 β 变 —— 矩形只能保守包住，靠 solve_xy 的圆环钳位
- *          把框内偏心的命令点投影到弧带上，所以这里是个"软边界"：
+ *          域宽（前后）不随 x 变，随 β 变 —— 矩形只能保守包住，靠 solve_xy 的圆环钳位
+ *          把框内偏心的命令点投影到弧带上，所以这里是"软边界"：
  *          框内不等于逐点可达，但任何点都会被钳到最近的弧带位置。
  * @note 要更大的平面工作区只能放开小臂前侧行程或换连杆，加工作区没用。
- *       TBD-11：实物工位摆好后，按实际抓取点再往里缩一次。
  */
 constexpr Workspace kWorkspace = {70.0F, 116.0F, -20.0F, 85.0F};
 
@@ -123,29 +120,29 @@ struct Motion {
     float settle_percent;                    // at_target 容差
     float sag_mm_per_100mm;                  // 水平位下垂预补偿，0 = 关闭
     unsigned max_elapsed_ms;                 // 单帧最大积分步长（主循环卡顿保护）
-    int jog_percent_per_second[4];           // 夹爪/腕的满杆 jog 速度（轴 0/1 白名单禁止，值为占位）
+    int jog_percent_per_second[4];           // 夹爪/腕的满杆 jog 速度（轴 0/1 无 jog 入口）
     float stick_damping_mm_per_percent;      // 摇杆关节兜底的阻尼 λ（mm/%）：越小越跟手，奇异区越抖
     float stick_box_tol_mm;                  // 矩形当墙的线性化残差容差（mm）：法向剔除会残留这个量
 };
 
 /**
  * @brief 速度与手感实例
- * @note slew 沿用 car_config 原值 300 %/s；sag 默认 0 = 关闭（见风险表 R-1）。
+ * @note sag 默认 0 = 关闭。
  */
 constexpr Motion kMotion = {
     50.0F,                // cart_speed_mm_per_second
-    300.0F,               // slew_percent_per_second（car_config 原值）
+    300.0F,               // slew_percent_per_second
     1.0F,                 // settle_percent
-    0.0F,                 // sag：默认关闭，见 v0.3 风险表
-    100U,                 // max_elapsed_ms（arm_pose.cpp 原 kMaxElapsedMs）
+    0.0F,                 // sag：0 = 关闭
+    100U,                 // max_elapsed_ms
     {150, 150, 200, 150}, // jog: 肩/肘/夹爪/腕
-    0.2F,                 // stick_damping：仿真实测 0.2 → 抖动 0.061 mm/帧²（0.02 时 3.08）
+    0.2F,                 // stick_damping：越小越跟手，奇异区越抖
     0.02F,                // stick_box_tol：舵机一个步进 2.6 mm 的 1%，刚好盖住线性化残差
 };
 
 /**
  * @brief slew 余量是否够
- * @details 最坏情况（r=60 mm、末端 50 mm/s）实算需要约 53 %/s，这里要求 4 倍余量，
+ * @details 最坏情况按 r=60 mm、末端 50 mm/s 估算，要求 4 倍余量，
  *          否则末端精调会跟不上摇杆。
  */
 constexpr bool slew_ok() {
@@ -157,7 +154,7 @@ constexpr bool slew_ok() {
 /**
  * @brief 一条预设姿态
  * @details x/y 是腕点绝对坐标（mm，原点在肩轴）；gripper/wrist 是行程百分比。
- * @note gripper：正 = 张开，负 = 夹紧（机械方向未标定时以此约定为准）。
+ * @note gripper：正 = 张开，负 = 夹紧。
  */
 struct Preset {
     float x_mm;
@@ -168,7 +165,7 @@ struct Preset {
 
 /**
  * @brief 预设姿态索引
- * @details 索引即 mode_control 绑定表的 pose 字段，不再为每个键写一个分支。
+ * @details 索引即 mode_control 绑定表的 pose 字段。
  */
 enum class Pose : unsigned {
     Home = 0, // ↑ 收纳 / 上电初始位
@@ -185,9 +182,9 @@ enum class Pose : unsigned {
 /**
  * @brief 八条预设姿态表
  * @details 八条全部落在前方那条 108.5~115.5 mm 的弧带上，按方位角 β 铺开
- *          （β 从 0° 正前方扫到 65°），半径只留 1~2 mm 余量——B 方案本来就只有这么多。
+ *          （β 从 0° 正前方扫到 65°），半径只留 1~2 mm 余量——弧带本身只有这么宽。
  *          Home 必须等于上电中位（arm_pose.cpp 的 kZeroPercent），否则按 ↑ 第一帧会跳。
- * @note 坐标全是 TBD-8 占位值：都验过可达、S2 最紧 −97%，但没对过实际工位，标定后替换。
+ * @note 坐标为占位值，标定后替换。
  */
 constexpr Preset kPoses[8] = {
     //  x_mm    y_mm   grip  wrist  说明（β / r）
@@ -245,7 +242,7 @@ static_assert(kJointLimits[kShoulderServo].min_percent >= -100.0F &&
               "大臂角度限位超出舵机行程，检查 deg_per_percent");
 static_assert(kJointLimits[kElbowServo].min_percent >= -100.0F &&
                   kJointLimits[kElbowServo].max_percent <= 100.0F,
-              "小臂角度限位超出舵机行程，zero_deg 是否取了 90°？");
+              "小臂角度限位超出舵机行程，检查 zero_deg 与 deg_per_percent");
 static_assert(kJointLimits[kShoulderServo].min_percent < kJointLimits[kShoulderServo].max_percent &&
                   kJointLimits[kElbowServo].min_percent < kJointLimits[kElbowServo].max_percent,
               "角度限位上下界颠倒");

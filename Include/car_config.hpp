@@ -31,7 +31,6 @@ enum class Wheel : unsigned { FrontLeft = 0, FrontRight, RearLeft, RearRight };
 
 /**
  * @brief M1～M4 四路电机各自对应的轮位
- * @note M1～M4 的轮位已经通过单电机校准确认。
  */
 constexpr Wheel kMotorWheel[4] = {Wheel::FrontLeft, Wheel::FrontRight, Wheel::RearRight,
                                   Wheel::RearLeft};
@@ -39,7 +38,6 @@ constexpr Wheel kMotorWheel[4] = {Wheel::FrontLeft, Wheel::FrontRight, Wheel::Re
 /**
  * @brief 每路电机的方向校正系数
  * @details +1：A=1、B=0 时车轮朝车头方向滚动；-1：反之。
- * @note 已按实车测试反转 M1、M2；现在四路正方向都是 +1。
  */
 constexpr int kMotorPolarity[4] = {1, 1, 1, 1};
 
@@ -61,14 +59,13 @@ constexpr int kAxisDeadzone = 16;
 
 /**
  * @brief L2/R2 原地自转的占空比（%）
- * @note 两键同按相抵为 0；实测太猛就往下调。
+ * @note 两键同按相抵为 0。
  */
 constexpr int kRotateDutyPercent = 80;
 
 /**
  * @brief 急停组合 L3+R3 需要同按的时长（ms）
- * @details PS2 20 ms 一帧，两键很少落在同一帧，瞬时判定会时灵时不灵；
- *          200 ms 是本工程唯一的安全妥协。
+ * @details PS2 20 ms 一帧，两键很少落在同一帧，因此不能用瞬时判定。
  */
 constexpr int kEstopHoldMs = 200;
 

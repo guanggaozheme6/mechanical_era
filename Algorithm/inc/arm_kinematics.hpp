@@ -103,10 +103,10 @@ void solve_forward(const Model &model, float shoulder_percent, float elbow_perce
 
 /**
  * @brief 某一侧的最小可达半径（由小臂角度限位反推）
- * @details θ2 行程不对称时（B 方案：前 45° / 后 135°），左右半平面能用到的折叠角不同，
+ * @details θ2 行程不对称时（前 45° / 后 135°），左右半平面能用到的折叠角不同，
  *          内边界也就不同：右半平面只能用 θ2 的负支，所以吃 range_min 的绝对值；
  *          左半平面用正支，吃 range_max。r(θ2) 在 [0°,180°] 上单调减，取该侧能到的最深
- *          折叠角即可。对称限位（θ2 限 ±90°）时两侧都得到 √(L1²+L2²)，与旧行为一致。
+ *          折叠角即可。对称限位（θ2 限 ±90°）时两侧都得到 √(L1²+L2²)。
  * @param model 几何模型
  * @param wrist_right true = 目标在右半平面（θ2 取负支）
  * @return 该侧内半径（mm），不小于 |L1−L2|

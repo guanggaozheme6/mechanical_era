@@ -7,13 +7,10 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "diagnostics.hpp"
+#include "hal_handles.h"
 #include "motor.hpp"
 #include "ps2.hpp"
 #include <cstdio>
-
-/* Private constants ---------------------------------------------------------*/
-
-extern "C" UART_HandleTypeDef huart3;
 
 /* Exported functions --------------------------------------------------------*/
 
@@ -45,21 +42,20 @@ void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_s
                           static_cast<uint16_t>(length), 20);
     }
 
-    // 读取 M4 的实际硬件配置，便于对照请求的占空比。
-    // GPIO 配置字段：PA11=0xA（复用推挽输出），PB10/PB11=0x2
-    // （推挽输出）
-    const int hardware_length =
-        // M4 是左后轮；输出其闭环状态，排查单轮编码器或 PID 参数问题。
+    // 输出 M4（左后轮）的闭环状态，便于对照请求的占空比。
+    const int pid_length =
         std::snprintf(message, sizeof(message),
                       "PID4 target=%d ticks=%d pwm=%d stalled=%u\r\n",
                       motor_status(3).target, motor_status(3).encoder_ticks,
                       motor_status(3).output,
                       static_cast<unsigned>(motor_status(3).stalled));
-    if (hardware_length > 0 && static_cast<unsigned>(hardware_length) < sizeof(message)) {
+    if (pid_length > 0 && static_cast<unsigned>(pid_length) < sizeof(message)) {
         HAL_UART_Transmit(&huart3, reinterpret_cast<uint8_t *>(message),
-                          static_cast<uint16_t>(hardware_length), 20);
+                          static_cast<uint16_t>(pid_length), 20);
     }
 
+    // TIM1/GPIO 的实配寄存器值；GPIO 配置字段：PA11=0xA（复用推挽输出），
+    // PB10/PB11=0x2（推挽输出）。
     const int m4_hardware_length =
         std::snprintf(message, sizeof(message),
                       "M4HW-v1 req=%d ccr=%lu arr=%lu run=%u en=%u moe=%u oc=%lu "
@@ -84,13 +80,12 @@ void report_status(const Ps2Frame &frame, DriveCommand command, bool emergency_s
 
 /**
  * @brief 上报机械臂状态
- * @details S1..S4 前缀与位置不变（标定手法依赖它），后面追加解算反馈。
+ * @details S1..S4 之后追加解算反馈：xy / tgt / th / ok / lim / wall / poses / bu。
  * @param command 本帧四路舵机指令
  * @param feedback 解算与状态反馈
  */
 void report_arm(const ArmCommand &command, const ArmFeedback &feedback) {
-    // 新格式约 105 字符，128 已无余量；缓冲按 arm_pose_v0.3 §8 加到 160。
-    char message[160];
+    char message[160]; // 本格式约 105 字符，留足余量
     const int length = std::snprintf(
         message, sizeof(message),
         "ARM S1=%d S2=%d S3=%d S4=%d xy=(%.1f,%.1f) tgt=(%.1f,%.1f) th=(%.1f,%.1f) "

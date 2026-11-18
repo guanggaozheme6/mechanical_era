@@ -39,7 +39,7 @@ enum class Ps2Button : uint8_t {
 
 /**
  * @brief 一帧解码后的手柄状态
- * @note 右摇杆通道已删（无读者）；字节 5/6 仍照收，只是不再存进来。
+ * @note 只保留左摇杆：右摇杆字节（5/6）不解码。
  */
 struct Ps2Frame {
     bool connected = false;  // 三重校验全部通过才算在线

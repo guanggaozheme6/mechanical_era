@@ -194,8 +194,8 @@ static void MX_SPI2_Init(void)
   }
   /* USER CODE BEGIN SPI2_Init 2 */
   /*
-   * 此段位于 CubeMX 保留区。即使 .ioc 被旧版 CubeMX 重新生成而丢失
-   * SPI 高级参数，也强制恢复 PS2 所需的 Mode 3、LSB-first、分频 256。
+   * 此段位于 CubeMX 保留区：若 SPI 高级参数被重新生成覆盖，
+   * 强制恢复 PS2 所需的 Mode 3、LSB-first、分频 256。
    */
   if (hspi2.Init.CLKPolarity != SPI_POLARITY_HIGH ||
       hspi2.Init.CLKPhase != SPI_PHASE_2EDGE ||

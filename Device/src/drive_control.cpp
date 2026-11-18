@@ -94,14 +94,12 @@ DriveCommand mix_drive(int forward, int strafe, int rotation, car_config::Mecanu
 
 /**
  * @brief 手柄 → 底盘指令（模式一）
- * @details 只挡断线；Cross/Select 不再清底盘，停车判定的唯一真值在 mode_control。
+ * @details 左摇杆平移、L2/R2 自转、方向键 80% 覆盖平移；这里只挡断线，
+ *          停车判定（急停 latch + 断线）的唯一真值在 mode_control。
  * @param frame 解码后的手柄帧
  * @return 四路电机占空比；断线时全零
  */
 DriveCommand drive_from_ps2(const Ps2Frame &frame) {
-    // 这里只挡断线：停车判定的唯一真值在 mode_control（急停 latch + 断线）。
-    // Cross 现在是预设 P6、Select 是模式键，按下的那一刻不能再把底盘清零，
-    // 否则「按 Select 进机械臂模式」时底盘会抽搐一下。
     if (!frame.connected) {
         return {};
     }
@@ -112,7 +110,7 @@ DriveCommand drive_from_ps2(const Ps2Frame &frame) {
 
     int forward = frame.analog ? axis(frame.left_y, true) : 0;
     int strafe = frame.analog ? axis(frame.left_x, false) : 0;
-    // L2 逆时针 / R2 顺时针自转；两键同按相抵为 0。右摇杆整条通道已删。
+    // L2 逆时针 / R2 顺时针自转；两键同按相抵为 0。
     const int rotation =
         (static_cast<int>(ps2_pressed(frame, Ps2Button::R2)) -
          static_cast<int>(ps2_pressed(frame, Ps2Button::L2))) *

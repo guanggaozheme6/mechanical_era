@@ -43,22 +43,20 @@ using arm_config::kWorkspace;
 
 /**
  * @brief 上电时四路的目标行程（必须落在 kWorkspace 内）
- * @details B 方案下 percent=0 意味着大臂竖直 + 小臂半折(45°)，末端绕在肩上方，
+ * @details percent=0 意味着大臂竖直 + 小臂半折(45°)，末端绕在肩上方，
  *          不在工作区里；上电点直接对齐 kPoses[Home]=(105.2, 38.3)。
  */
 constexpr float kZeroPercent[kServoCount] = {-66.0F, -86.0F, 0.0F, 0.0F};
 
 /**
  * @brief 标定期初值（行程百分比，-100..100）
- * @note 只有 ARM_BRINGUP 打开时才生效。改一个数 → 重烧 → 看串口：这是删掉关节 jog
- *       之后唯一的单路手动手段。
+ * @note 只有 ARM_BRINGUP 打开时才生效。改一个数 → 重烧 → 看串口。
  */
 constexpr int kBringupPercent[kServoCount] = {0, 0, 0, 0};
 
 /**
  * @brief 标定版用的全行程限位
- * @details 必须放开到 ±100。用 kJointLimits 的话，"用限位去测限位"的循环还在，
- *          只不过程序从 solve_xy 换成了 bank_configure —— 量不出真实边界。
+ * @details 必须放开到 ±100：用 kJointLimits 就量不出真实边界。
  * @warning 标定版没有任何软件限位，必须人工盯住，听到堵转立刻拔电。
  */
 constexpr arm_joint::Limits kBringupLimits[kServoCount] = {
@@ -197,9 +195,8 @@ bool apply_xy(float x_mm, float y_mm, float &applied_x, float &applied_y) {
 
 /**
  * @brief 摇杆一步：位置法优先，关节域兜底（贴边滑）
- * @details 与旧版（FK → 矩形钳位 → solve_xy → 钳位照发）的差别只有一句：
- *          「走不通」不再解释成「沿半径缩到弧带上照发」，而是「位置法沿摇杆方向缩步，
- *          缩到底就交给关节域沿边界切向滑」。两段式与实测对比见 sim/README.md §8.1。
+ * @details 「走不通」不解释成「沿半径缩到弧带上照发」，而是「位置法沿摇杆方向缩步，
+ *          缩到底就交给关节域沿边界切向滑」。
  *          闭环于「当前实际末端」（current，不是 target）：每帧只走一个步长，松手不追尾、
  *          到边界不蠕动、扳回立即恢复。
  * @param dt_s 本帧时长（秒）
