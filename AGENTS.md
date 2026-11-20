@@ -22,7 +22,7 @@
 ```powershell
 cmake --preset Debug
 cmake --build --preset Debug          # -> build\Debug\mechanical_era.elf
-STM32CLI -w build\Debug\mechanical_era.elf -rst
+openocd -f interface/stlink.cfg -f target/stm32f1x.cfg -c "program build/Debug/mechanical_era.elf verify reset exit"
 ```
 
 - 工具链是 PATH 里的 `arm-none-eabi-`（GCC 15.3.1），编译选项 `-Wall -Wextra -Werror`。

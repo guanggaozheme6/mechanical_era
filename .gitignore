@@ -8,3 +8,4 @@
 # 仿真对拍探针的构建产物
 /sim/verify/*.exe
 
+/.vscode
