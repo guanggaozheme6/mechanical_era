@@ -1,5 +1,8 @@
 /build/
 /.mxproject
+/.clangd
+settings.json
+/.vscode/
 
 # SolidWorks 原始模型：二进制大件，不入库（含 ~$ 临时锁文件）
 /model/
