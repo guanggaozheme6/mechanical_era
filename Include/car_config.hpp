@@ -32,8 +32,7 @@ enum class Wheel : unsigned { FrontLeft = 0, FrontRight, RearLeft, RearRight };
 /**
  * @brief M1～M4 四路电机各自对应的轮位
  */
-constexpr Wheel kMotorWheel[4] = { Wheel::FrontLeft, Wheel::FrontRight, Wheel::RearRight,
-                                  Wheel::RearLeft };
+constexpr Wheel kMotorWheel[4] = {Wheel::RearRight,Wheel::FrontRight,Wheel::FrontLeft,Wheel::RearLeft};
 
 /**
  * @brief 每路电机的方向校正系数

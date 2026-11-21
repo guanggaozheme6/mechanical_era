@@ -18,7 +18,7 @@ constexpr uint32_t kUpdateMs = 10;        // 最小推进间隔
 constexpr uint32_t kMaxDtMs = 50;         // dt 上限：主循环卡顿时积分不许跳步
 constexpr uint32_t kEncoderStallMs = 300; // 无计数多久判堵转
 // 100% 目标速度对应每个 10 ms 控制周期的编码器计数。实车可在此处统一调速。
-constexpr float kTicksAtFullSpeed = 20.0F;
+constexpr float kTicksAtFullSpeed = 1000.0F;
 
 // PID 参数属于电机本体，不属于算法层：换底盘只改这四个数。
 constexpr float kProportionalGain = 3.0F;
