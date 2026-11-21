@@ -1,4 +1,8 @@
 {
+    // 调试：openocd 跑在 WSL 里（gdb 用 gdb-multiarch）。
+    // 注意：调试必须让探针进入 WSL —— 需要 Windows 侧执行一次
+    //   usbipd attach --wsl --busid <X-Y>
+    // 烧录不受影响（烧录走 Windows 侧 openocd，见 tasks.json 的 flash 任务）。
     "version": "0.2.0",
     "configurations": [
         {
@@ -8,9 +12,10 @@
             "request": "launch",
             "type": "cortex-debug",
             "runToEntryPoint": "main",
+            // F5 前先确保探针在 WSL 里（consomme 后端必须 --host-ip 127.0.0.1）
+            "preLaunchTask": "probe: attach (WSL)",
             "servertype": "openocd",
-            "gdbPath": "arm-none-eabi-gdb",
-            "armToolchainPath": "C:\\Program Files (x86)\\Arm GNU Toolchain arm-none-eabi\\14.3 rel1\\bin",
+            "gdbPath": "gdb-multiarch",
             "configFiles": [
                 "interface/stlink.cfg",
                 "target/stm32f1x.cfg"

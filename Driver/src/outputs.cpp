@@ -35,6 +35,12 @@ const Motor kMotors[] = {
 constexpr uint32_t servo_channels[] = {TIM_CHANNEL_1, TIM_CHANNEL_2, TIM_CHANNEL_3, TIM_CHANNEL_4};
 
 int previous_motor_duty[4] = {}; // 上一帧占空比，用于换向检测
+
+/** @brief 夹爪这一路 PWM 是否已启动；false = 上电不给脉冲、舵机不受力 */
+bool g_gripper_pwm_on = false;
+
+/** @brief 夹爪在 servo[] 里的下标（与 arm_config::kGripperServo 一致） */
+constexpr unsigned kGripperIndex = 2;
 } // namespace
 
 /* Exported functions --------------------------------------------------------*/
@@ -52,6 +58,14 @@ void apply_servos(ArmCommand command) {
             command.servo[i] < -100 ? -100 : (command.servo[i] > 100 ? 100 : command.servo[i]);
         const int pulse_us = kNeutralUs + kSpanUs * percent / 100;
         __HAL_TIM_SET_COMPARE(&htim8, servo_channels[i], static_cast<uint32_t>(pulse_us));
+        // 夹爪上电不给脉冲：舵机不上力就不会自己顶在“抓紧”位堵转。
+        // 首次收到非零夹爪指令才启动这一路，之后常开（回中位 0 也照常给脉冲）。
+        if (i == kGripperIndex && !g_gripper_pwm_on && percent != 0) {
+            if (HAL_TIM_PWM_Start(&htim8, servo_channels[i]) != HAL_OK) {
+                Error_Handler();
+            }
+            g_gripper_pwm_on = true;
+        }
     }
 }
 
@@ -124,8 +138,11 @@ void init_outputs() {
         }
     }
     apply_servos({});
-    for (const auto channel : servo_channels) {
-        if (HAL_TIM_PWM_Start(&htim8, channel) != HAL_OK) {
+    for (unsigned i = 0; i < 4; ++i) {
+        if (i == kGripperIndex) {
+            continue; // 夹爪上电不启动：见 apply_servos 的惰性启动
+        }
+        if (HAL_TIM_PWM_Start(&htim8, servo_channels[i]) != HAL_OK) {
             Error_Handler();
         }
     }

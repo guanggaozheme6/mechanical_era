@@ -20,9 +20,9 @@ enum class MecanumLayout { X, O };
 
 /**
  * @brief 当前麦轮布局
- * @note 俯视时四个麦轮的滚子组成 O 型。
+ * @note 俯视时四个麦轮的滚子组成 X 型。
  */
-constexpr MecanumLayout kMecanumLayout = MecanumLayout::O;
+constexpr MecanumLayout kMecanumLayout = MecanumLayout::X;
 
 /**
  * @brief 轮位枚举
@@ -32,14 +32,14 @@ enum class Wheel : unsigned { FrontLeft = 0, FrontRight, RearLeft, RearRight };
 /**
  * @brief M1～M4 四路电机各自对应的轮位
  */
-constexpr Wheel kMotorWheel[4] = {Wheel::FrontLeft, Wheel::FrontRight, Wheel::RearRight,
-                                  Wheel::RearLeft};
+constexpr Wheel kMotorWheel[4] = { Wheel::FrontLeft, Wheel::FrontRight, Wheel::RearRight,
+                                  Wheel::RearLeft };
 
 /**
  * @brief 每路电机的方向校正系数
  * @details +1：A=1、B=0 时车轮朝车头方向滚动；-1：反之。
  */
-constexpr int kMotorPolarity[4] = {1, 1, 1, 1};
+constexpr int kMotorPolarity[4] = {1, -1, -1, 1};
 
 /**
  * @brief 摇杆满偏时的 PWM 占空比上限（%）

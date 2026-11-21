@@ -73,7 +73,7 @@ int axis(uint8_t value, bool invert) {
 DriveCommand mix_drive(int forward, int strafe, int rotation, car_config::MecanumLayout layout) {
     // O 型与 X 型的横向滚子方向相反。轮序为左前、右前、左后、右后。
     // 旋转指令仍表示归一化的左右差速量，不是角速度。
-    if (layout == car_config::MecanumLayout::O) {
+    if (layout == car_config::MecanumLayout::X) {
         strafe = -strafe;
     }
     int wheel[4] = {forward + strafe + rotation, forward - strafe - rotation,

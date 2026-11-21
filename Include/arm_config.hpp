@@ -15,9 +15,6 @@
 // 所以字段顺序就是初始化顺序，以后只准在末尾追加。
 //
 // 本文件只装数值 + 编译期自检，不放任何逻辑。
-//
-// v0.4 起固件里**没有预设姿态表**：只剩一个中立位（kNeutralPose），按键不再绑坐标。
-// 那 8 条规划坐标留在 sim/index.html 里当挑点工具（见 sim/README §9），不进固件。
 
 /* Includes ------------------------------------------------------------------*/
 #include "arm_joint.hpp"
@@ -57,7 +54,7 @@ constexpr float kStopBackoffDeg = 3.0F;
  *       文件末尾的 static_assert 会替你把这条卡住。
  */
 constexpr arm_kinematics::Model kGeom = {
-    76.0F, 40.08F, // L1 大臂 / L2 小臂（轴心距，实测）
+    76.36F, 40.08F, // L1 大臂 / L2 小臂（轴心距，实测）
     {90.0F, 0.9F, kShoulderContactDeg + kStopBackoffDeg, // shoulder: zero / deg% / min = 7.10
      180.0F - kShoulderContactDeg - kStopBackoffDeg},    //           max = 172.90
     {45.0F, 0.9F, -45.0F + kStopBackoffDeg, // elbow: zero / deg% / min = −42.00
@@ -218,7 +215,7 @@ struct Point {
  * @details 必须等于 `arm_pose.cpp` 的 `kZeroPercent{-66, -86}` 的 FK，否则按 Start 第一帧会跳。
  * @note 坐标是 TBD-8 占位值：验过可达且在工作区内（β=20°、r=112），没对过实际工位，标定后替换。
  */
-constexpr Point kNeutralPose = {105.2F, 38.3F};
+constexpr Point kNeutralPose = {105.2F, 70.3F};
 
 /**
  * @brief 中立位是否落在工作区矩形内
